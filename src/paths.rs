@@ -5,7 +5,9 @@ use std::path::PathBuf;
 /// Root directory: `~/.agents-connector/` (or `$XDG_DATA_HOME/agents-connector/`).
 pub fn root() -> anyhow::Result<PathBuf> {
     if let Ok(override_path) = std::env::var("AGENTS_CONNECTOR_HOME") {
-        return Ok(PathBuf::from(override_path));
+        if !override_path.is_empty() {
+            return Ok(PathBuf::from(override_path));
+        }
     }
     let dirs = directories::BaseDirs::new()
         .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
@@ -60,6 +62,16 @@ mod tests {
         assert_eq!(session_db("demo").unwrap(), PathBuf::from("/tmp/test-ac/sessions/demo/db.sqlite"));
         assert_eq!(session_socket("demo").unwrap(), PathBuf::from("/tmp/test-ac/sessions/demo/broker.sock"));
         assert_eq!(session_agent_dir("demo", "alice").unwrap(), PathBuf::from("/tmp/test-ac/sessions/demo/agents/alice"));
+        std::env::remove_var("AGENTS_CONNECTOR_HOME");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn empty_override_falls_back_to_home_dir() {
+        std::env::set_var("AGENTS_CONNECTOR_HOME", "");
+        let r = root().unwrap();
+        assert!(r.is_absolute(), "root() must return an absolute path; got {:?}", r);
+        assert!(r.ends_with(".agents-connector"), "root() should fall back to ~/.agents-connector; got {:?}", r);
         std::env::remove_var("AGENTS_CONNECTOR_HOME");
     }
 }
