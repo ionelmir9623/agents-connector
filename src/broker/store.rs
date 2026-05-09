@@ -1,4 +1,4 @@
-//! SQLite-backed message store for a session.
+//! SQLite-backed agent registry for the broker.
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
@@ -59,7 +59,10 @@ impl Store {
             "INSERT INTO agents (name, cli_kind, token, registered_at) VALUES (?1, ?2, ?3, ?4)",
             params![name, cli_kind, token, now],
         ).map_err(|e| match e {
-            rusqlite::Error::SqliteFailure(_, Some(s)) if s.contains("agents.name") => {
+            rusqlite::Error::SqliteFailure(ref err, Some(ref s))
+                if err.code == rusqlite::ErrorCode::ConstraintViolation
+                    && s.contains("agents.name") =>
+            {
                 anyhow!("agent already exists: {}", name)
             }
             other => anyhow::Error::from(other),
