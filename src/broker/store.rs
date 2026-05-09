@@ -21,6 +21,39 @@ pub struct Agent {
     pub removed_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Message {
+    pub id: i64,
+    pub from_name: String,
+    pub to_name: Option<String>,
+    pub text: String,
+    pub ask_id: Option<i64>,
+    pub in_reply_to: Option<i64>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Reply {
+    pub id: i64,
+    pub ask_id: i64,
+    pub from_name: String,
+    pub text: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Result of `ask`: the new ask's id and the corresponding message row's id.
+pub struct AskResult {
+    pub ask_id: i64,
+    pub message_id: i64,
+}
+
+/// Result of `post_reply`: the new reply's id, the message row id for the reply, and the original asker.
+pub struct ReplyResult {
+    pub reply_id: i64,
+    pub message_id: i64,
+    pub original_asker: String,
+}
+
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
@@ -47,6 +80,36 @@ impl Store {
                 removed_at TEXT
             );
             CREATE INDEX IF NOT EXISTS agents_token_idx ON agents(token);
+
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_agent TEXT NOT NULL,
+                to_agent TEXT,                 -- NULL = broadcast
+                text TEXT NOT NULL,
+                ask_id INTEGER,                -- non-null if this message originates from an ask
+                in_reply_to INTEGER,           -- non-null if this message is a reply to an ask
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS messages_to_idx ON messages(to_agent, id);
+            CREATE INDEX IF NOT EXISTS messages_from_idx ON messages(from_agent, id);
+
+            CREATE TABLE IF NOT EXISTS asks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                from_agent TEXT NOT NULL,
+                to_agent TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS replies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ask_id INTEGER NOT NULL,
+                from_agent TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (ask_id) REFERENCES asks(id)
+            );
+            CREATE INDEX IF NOT EXISTS replies_ask_idx ON replies(ask_id);
         "#)?;
         Ok(())
     }
@@ -117,6 +180,110 @@ impl Store {
             registered_at: row.get::<_, String>(4)?.parse::<DateTime<Utc>>().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
             removed_at: row.get::<_, Option<String>>(5)?.map(|s| s.parse::<DateTime<Utc>>()).transpose().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
         }))?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn tell(&self, from: &str, to: Option<&str>, text: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT INTO messages (from_agent, to_agent, text, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![from, to, text, now],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Returns all messages with id > `since` that are visible to `agent`:
+    /// either DM'd to them, or broadcast (to_agent IS NULL) and not from them.
+    pub fn read_messages_for(&self, agent: &str, since: i64) -> Result<Vec<Message>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(r#"
+            SELECT id, from_agent, to_agent, text, ask_id, in_reply_to, created_at
+            FROM messages
+            WHERE id > ?1
+              AND (to_agent = ?2 OR (to_agent IS NULL AND from_agent != ?2))
+            ORDER BY id
+        "#)?;
+        let rows = stmt.query_map(params![since, agent], |row| {
+            Ok(Message {
+                id: row.get(0)?,
+                from_name: row.get(1)?,
+                to_name: row.get::<_, Option<String>>(2)?,
+                text: row.get(3)?,
+                ask_id: row.get::<_, Option<i64>>(4)?,
+                in_reply_to: row.get::<_, Option<i64>>(5)?,
+                created_at: row.get::<_, String>(6)?
+                    .parse()
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Posts an ask. Also writes a corresponding message row (so the recipient sees it via read_messages).
+    pub fn ask(&self, from: &str, to: &str, text: &str) -> Result<AskResult> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        let tx = conn.unchecked_transaction()?;
+        tx.execute(
+            "INSERT INTO asks (from_agent, to_agent, text, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![from, to, text, now],
+        )?;
+        let ask_id = tx.last_insert_rowid();
+        tx.execute(
+            "INSERT INTO messages (from_agent, to_agent, text, ask_id, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![from, to, text, ask_id, now],
+        )?;
+        let message_id = tx.last_insert_rowid();
+        tx.commit()?;
+        Ok(AskResult { ask_id, message_id })
+    }
+
+    /// Records a reply for `ask_id` and writes a linking message row from the reply's author to the original asker.
+    pub fn post_reply(&self, from: &str, ask_id: i64, text: &str) -> Result<ReplyResult> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        let tx = conn.unchecked_transaction()?;
+
+        // Look up original asker so the message goes to the right person.
+        let original_from: String = tx.query_row(
+            "SELECT from_agent FROM asks WHERE id = ?1",
+            params![ask_id],
+            |row| row.get(0)
+        ).map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => anyhow!("ask {} not found", ask_id),
+            other => anyhow::Error::from(other),
+        })?;
+
+        tx.execute(
+            "INSERT INTO replies (ask_id, from_agent, text, created_at) VALUES (?1, ?2, ?3, ?4)",
+            params![ask_id, from, text, now],
+        )?;
+        let reply_id = tx.last_insert_rowid();
+        tx.execute(
+            "INSERT INTO messages (from_agent, to_agent, text, in_reply_to, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![from, original_from, text, ask_id, now],
+        )?;
+        let message_id = tx.last_insert_rowid();
+        tx.commit()?;
+        Ok(ReplyResult { reply_id, message_id, original_asker: original_from })
+    }
+
+    pub fn replies_for_ask(&self, ask_id: i64) -> Result<Vec<Reply>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, ask_id, from_agent, text, created_at FROM replies WHERE ask_id = ?1 ORDER BY id"
+        )?;
+        let rows = stmt.query_map(params![ask_id], |row| {
+            Ok(Reply {
+                id: row.get(0)?,
+                ask_id: row.get(1)?,
+                from_name: row.get(2)?,
+                text: row.get(3)?,
+                created_at: row.get::<_, String>(4)?.parse()
+                    .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+            })
+        })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 }
