@@ -4,7 +4,7 @@
 //! session's broker socket, this regenerates the adapter config files (idempotent)
 //! and spawns the CLI in a tmux window of the given session.
 
-use crate::adapters::{claude, codex, CliKind};
+use crate::adapters::{claude, codex, gemini, CliKind};
 use crate::{paths, tmux};
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -46,6 +46,21 @@ pub fn launch_in_tmux(spec: &Spec, broker_socket: &Path) -> Result<()> {
             }
             if let Some(dir) = spec.workdir.as_ref() {
                 parts.push("--cd".into());
+                parts.push(shell_quote(&dir.to_string_lossy()));
+            }
+            parts.join(" ")
+        }
+        CliKind::Gemini => {
+            // Gemini reads .gemini/settings.json from cwd. We write it to agent_dir
+            // and cd into agent_dir before launching. The user's project workdir (if any)
+            // is added via --include-directories so gemini can read/write there.
+            let generated = gemini::generate(&agent_dir, &exe, broker_socket, &spec.token)?;
+            let mut parts: Vec<String> = vec![
+                format!("cd {} &&", shell_quote(&generated.launch_cwd.to_string_lossy())),
+                "gemini".into(),
+            ];
+            if let Some(dir) = spec.workdir.as_ref() {
+                parts.push("--include-directories".into());
                 parts.push(shell_quote(&dir.to_string_lossy()));
             }
             parts.join(" ")

@@ -8,6 +8,7 @@ pub mod gemini;
 pub enum CliKind {
     Claude,
     Codex,
+    Gemini,
 }
 
 impl CliKind {
@@ -15,7 +16,8 @@ impl CliKind {
         match s {
             "claude" => Ok(CliKind::Claude),
             "codex" => Ok(CliKind::Codex),
-            other => anyhow::bail!("unsupported cli kind: {}. Supported: claude, codex.", other),
+            "gemini" => Ok(CliKind::Gemini),
+            other => anyhow::bail!("unsupported cli kind: {}. Supported: claude, codex, gemini.", other),
         }
     }
 
@@ -23,6 +25,7 @@ impl CliKind {
         match self {
             CliKind::Claude => "claude",
             CliKind::Codex => "codex",
+            CliKind::Gemini => "gemini",
         }
     }
 }
