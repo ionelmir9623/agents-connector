@@ -110,17 +110,64 @@ Note the **two levels of nesting**: each `[[hooks.<event>]]` is a *group* contai
 
 ## Gemini CLI
 
-**Docs:** TBD (research at start of Plan 3)
-**MCP support:** TBD
-**Hook support:** TBD
-**Verified against:** TBD
+**Docs:** https://github.com/google-gemini/gemini-cli (README) | https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/reference.md (hooks) | https://google-gemini.github.io/gemini-cli/docs/get-started/configuration.html (config)
+**Install:** `brew install gemini-cli` or `npm install -g @google/gemini-cli`
+**Command:** `gemini`
+**Settings file:** `~/.gemini/settings.json` (global) merged with `<cwd>/.gemini/settings.json` (project-local). No per-invocation `-c` override and no `--settings <file>` flag — config is purely file-based.
+**Per-invocation isolation:** must come from running gemini in a per-agent cwd that contains its own `.gemini/settings.json`.
+**Working-dir flag:** no `--cd <path>`. To give gemini access to a different directory tree while running from a per-agent cwd, use `--include-directories <path>`.
+**Verified against:** gemini 0.41.2, 2026-05-10.
 
-To be filled in when implementing the Gemini adapter (Plan 3). Research checklist:
-1. Does `gemini --help` mention MCP? Find the actual MCP config location.
-2. Does Gemini have a hook system? Find the docs URL.
-3. If so: which events can inject context? What's the output schema?
-4. Per-invocation config override or env var (analogous to `CODEX_HOME` / `--mcp-config`)?
-5. Working directory flag?
+### Hooks
+
+| Event | Can inject `additionalContext`? | Notes |
+|---|---|---|
+| `SessionStart` | Yes | Fires when the session begins/resumes |
+| `BeforeAgent` | Yes | What we use — fires before the model takes a turn (covers human-typed-prompt case) |
+| `AfterTool` | Yes | What we use — fires after every tool call |
+| `BeforeTool` | (only blocks/permits) | Cannot inject context |
+| `AfterAgent` | No | Gemini's "Stop"-equivalent. Cannot inject. |
+| `SessionEnd` | No | Cleanup only |
+| `Notification` | No | UI events |
+| `PreCompress` | No | Compression event |
+
+**Output schema (BeforeAgent / AfterTool):** Note the absence of `hookEventName` (unlike Codex):
+```json
+{
+  "hookSpecificOutput": {
+    "additionalContext": "..."
+  }
+}
+```
+
+**Settings file shape (`<cwd>/.gemini/settings.json`):**
+```json
+{
+  "mcpServers": {
+    "agents_connector": {
+      "command": "/path/to/agents-connector",
+      "args": ["mcp-shim", "--socket", "...", "--agent-token", "..."],
+      "env": {}
+    }
+  },
+  "hooks": {
+    "BeforeAgent": [{
+      "matchers": ["*"],
+      "command": "/path/to/agents-connector hook --socket ... --agent-token ... --event before_agent --cli-kind gemini"
+    }],
+    "AfterTool": [{
+      "matchers": ["*"],
+      "command": "/path/to/agents-connector hook --socket ... --agent-token ... --event after_tool --cli-kind gemini"
+    }]
+  }
+}
+```
+
+**Required to enable:** Nothing. Hooks fire by default once configured in settings.
+
+**Approval gate:** None.
+
+**`gemini hooks` subcommand:** exists in 0.41.2 with only a `migrate` subcommand (converts Claude Code hooks). Not used by us — we write the settings.json directly.
 
 ---
 
