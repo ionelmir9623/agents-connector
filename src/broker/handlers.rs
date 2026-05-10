@@ -22,10 +22,11 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
             },
             Err(e) => Response::Error { message: format!("{:#}", e) },
         },
-        Request::Tell { from, to, text, urgent: _ } => {
+        Request::Tell { from, to, text, urgent } => {
             let from_dto = from.clone();
             let to_dto = to.clone();
             let text_dto = text.clone();
+            let urgent_recipient = if urgent { to.clone() } else { None };
             match ctx.store.tell(&from, to.as_deref(), &text) {
                 Ok(message_id) => {
                     let dto = crate::ipc::MessageDto {
@@ -38,6 +39,9 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
                         created_at: chrono::Utc::now().to_rfc3339(),
                     };
                     let _ = ctx.message_stream.send(dto);
+                    if let (Some(session), Some(agent)) = (ctx.session.as_deref(), urgent_recipient.as_deref()) {
+                        crate::broker::wake::nudge(session, agent, "[agents-connector] urgent message — please check");
+                    }
                     Response::TellAck { message_id }
                 }
                 Err(e) => Response::Error { message: format!("{:#}", e) },
