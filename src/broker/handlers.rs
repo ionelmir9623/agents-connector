@@ -9,7 +9,7 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
             Ok(None) => Response::Error { message: "unknown agent token".into() },
             Err(e) => Response::Error { message: format!("{:#}", e) },
         },
-        Request::RegisterAgent { name, cli_kind } => match ctx.store.register_agent(&name, &cli_kind, None) {
+        Request::RegisterAgent { name, cli_kind, workdir } => match ctx.store.register_agent(&name, &cli_kind, workdir.as_deref()) {
             Ok(token) => Response::RegisterAck { agent_token: token },
             Err(e) => Response::Error { message: format!("{:#}", e) },
         },
@@ -121,6 +121,20 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
                 Err(_) => Response::Replies { replies: vec![] }, // timeout = empty
             }
         }
+        Request::RemoveAgent { name } => match ctx.store.remove_agent(&name) {
+            Ok(token) => Response::RemoveAck { freed_token: token },
+            Err(e) => Response::Error { message: format!("{:#}", e) },
+        },
+        Request::GetAgent { name } => match ctx.store.agent_by_name(&name) {
+            Ok(Some(agent)) => Response::AgentDetails {
+                name: agent.name,
+                cli_kind: agent.cli_kind,
+                token: agent.token,
+                workdir: agent.workdir,
+            },
+            Ok(None) => Response::Error { message: format!("agent not found: {}", name) },
+            Err(e) => Response::Error { message: format!("{:#}", e) },
+        },
         Request::Shutdown => {
             let _ = ctx.shutdown_tx.send(());
             Response::Ok

@@ -50,7 +50,7 @@ async fn register_agent_returns_token_and_list_includes_it() {
     let (_tmp, sock) = spawn_test_broker().await;
 
     let mut stream = UnixStream::connect(&sock).await.unwrap();
-    let req = Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into() };
+    let req = Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into(), workdir: None };
     write_frame_async(&mut stream, &serde_json::to_vec(&req).unwrap()).await.unwrap();
     let frame = read_frame_async(&mut stream).await.unwrap();
     let resp: Response = serde_json::from_slice(&frame).unwrap();
@@ -78,9 +78,9 @@ async fn tell_and_read_messages_round_trip() {
     let (_tmp, sock) = spawn_test_broker().await;
 
     let mut s = UnixStream::connect(&sock).await.unwrap();
-    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into() }).unwrap()).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into(), workdir: None }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
-    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into() }).unwrap()).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into(), workdir: None }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
 
     write_frame_async(&mut s, &serde_json::to_vec(&Request::Tell {
@@ -114,9 +114,9 @@ async fn ask_reply_check_round_trip() {
     let (_tmp, sock) = spawn_test_broker().await;
 
     let mut s = UnixStream::connect(&sock).await.unwrap();
-    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into() }).unwrap()).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into(), workdir: None }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
-    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into() }).unwrap()).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into(), workdir: None }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
 
     write_frame_async(&mut s, &serde_json::to_vec(&Request::Ask {
@@ -154,9 +154,9 @@ async fn wait_for_reply_blocks_then_returns() {
     let (_tmp, sock) = spawn_test_broker().await;
 
     let mut s = UnixStream::connect(&sock).await.unwrap();
-    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into() }).unwrap()).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into(), workdir: None }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
-    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into() }).unwrap()).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into(), workdir: None }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
 
     write_frame_async(&mut s, &serde_json::to_vec(&Request::Ask {
@@ -185,6 +185,55 @@ async fn wait_for_reply_blocks_then_returns() {
             assert_eq!(replies.len(), 1);
             assert_eq!(replies[0].text, "go");
         }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn get_agent_returns_full_details() {
+    let (_tmp, sock) = spawn_test_broker().await;
+
+    let mut s = UnixStream::connect(&sock).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
+        name: "alice".into(), cli_kind: "claude".into(), workdir: Some("/tmp/x".into()),
+    }).unwrap()).await.unwrap();
+    let token = match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
+        Response::RegisterAck { agent_token } => agent_token,
+        other => panic!("unexpected: {:?}", other),
+    };
+
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::GetAgent { name: "alice".into() }).unwrap()).await.unwrap();
+    match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
+        Response::AgentDetails { name, cli_kind, token: t, workdir } => {
+            assert_eq!(name, "alice");
+            assert_eq!(cli_kind, "claude");
+            assert_eq!(t, token);
+            assert_eq!(workdir.as_deref(), Some("/tmp/x"));
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn remove_agent_soft_deletes_via_ipc() {
+    let (_tmp, sock) = spawn_test_broker().await;
+
+    let mut s = UnixStream::connect(&sock).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
+        name: "alice".into(), cli_kind: "claude".into(), workdir: None,
+    }).unwrap()).await.unwrap();
+    let _ = read_frame_async(&mut s).await.unwrap();
+
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RemoveAgent { name: "alice".into() }).unwrap()).await.unwrap();
+    match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
+        Response::RemoveAck { freed_token } => assert!(!freed_token.is_empty()),
+        other => panic!("unexpected: {:?}", other),
+    }
+
+    // Subsequent GetAgent fails.
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::GetAgent { name: "alice".into() }).unwrap()).await.unwrap();
+    match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
+        Response::Error { message } => assert!(message.contains("not found")),
         other => panic!("unexpected: {:?}", other),
     }
 }

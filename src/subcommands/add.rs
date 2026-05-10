@@ -22,7 +22,8 @@ pub async fn run(
     // 1. Ask broker to register the agent.
     let mut s = UnixStream::connect(&socket).await
         .context("connecting to broker")?;
-    let req = Request::RegisterAgent { name: name.clone(), cli_kind: kind.as_str().to_string() };
+    let workdir_str = workdir.as_ref().map(|p| p.to_string_lossy().to_string());
+    let req = Request::RegisterAgent { name: name.clone(), cli_kind: kind.as_str().to_string(), workdir: workdir_str.clone() };
     write_frame_async(&mut s, &serde_json::to_vec(&req)?).await?;
     let frame = read_frame_async(&mut s).await?;
     let token = match serde_json::from_slice::<Response>(&frame)? {
@@ -51,7 +52,6 @@ pub async fn run(
     };
 
     // 4. tmux new-window inside the session.
-    let workdir_str = workdir.as_ref().map(|p| p.to_string_lossy().to_string());
     let cd_prefix = workdir_str.as_ref().map(|d| format!("cd {} && ", shell_quote(d))).unwrap_or_default();
     let full_cmd = format!("{}{}", cd_prefix, launch_cmd);
     tmux::new_window(&session, &name, &[], &full_cmd)?;
