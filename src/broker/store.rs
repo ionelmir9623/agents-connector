@@ -167,7 +167,7 @@ impl Store {
     pub fn agent_by_name(&self, name: &str) -> Result<Option<Agent>> {
         let conn = self.conn.lock().unwrap();
         let agent = conn.query_row(
-            "SELECT id, name, cli_kind, token, registered_at, removed_at, workdir FROM agents WHERE name = ?1",
+            "SELECT id, name, cli_kind, token, registered_at, removed_at, workdir FROM agents WHERE name = ?1 AND removed_at IS NULL",
             params![name],
             |row| Ok(Agent {
                 id: row.get(0)?,
@@ -301,5 +301,31 @@ impl Store {
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Soft-delete an agent (sets `removed_at`). Returns the agent's token so the
+    /// caller can clean up filesystem state. Errors if the agent isn't found or
+    /// is already removed.
+    pub fn remove_agent(&self, name: &str) -> Result<String> {
+        let conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        let tx = conn.unchecked_transaction()?;
+
+        // Verify agent exists and is active; capture the token.
+        let token: String = tx.query_row(
+            "SELECT token FROM agents WHERE name = ?1 AND removed_at IS NULL",
+            params![name],
+            |row| row.get(0),
+        ).map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => anyhow!("agent not found or already removed: {}", name),
+            other => anyhow::Error::from(other),
+        })?;
+
+        tx.execute(
+            "UPDATE agents SET removed_at = ?1 WHERE name = ?2",
+            params![now, name],
+        )?;
+        tx.commit()?;
+        Ok(token)
     }
 }

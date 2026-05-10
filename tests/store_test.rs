@@ -146,3 +146,43 @@ fn workdir_round_trips_through_register_and_lookup() {
     let by_token2 = store.agent_by_token(&token2).unwrap().unwrap();
     assert_eq!(by_token2.workdir, None);
 }
+
+#[test]
+fn remove_agent_soft_deletes_and_returns_token() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+    let store = Store::open(&db).unwrap();
+
+    let token = store.register_agent("alice", "claude", None).unwrap();
+    let removed_token = store.remove_agent("alice").unwrap();
+    assert_eq!(removed_token, token);
+
+    // Lookup by name returns None now.
+    assert!(store.agent_by_name("alice").unwrap().is_none());
+    // Lookup by token also returns None (token is for an inactive agent).
+    assert!(store.agent_by_token(&token).unwrap().is_none());
+    // list_agents excludes the removed agent.
+    assert!(store.list_agents().unwrap().is_empty());
+}
+
+#[test]
+fn remove_agent_errors_if_not_found() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+    let store = Store::open(&db).unwrap();
+
+    let err = store.remove_agent("ghost").unwrap_err();
+    assert!(format!("{:#}", err).to_lowercase().contains("not found"));
+}
+
+#[test]
+fn remove_agent_errors_if_already_removed() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+    let store = Store::open(&db).unwrap();
+
+    store.register_agent("alice", "claude", None).unwrap();
+    store.remove_agent("alice").unwrap();
+    let err = store.remove_agent("alice").unwrap_err();
+    assert!(format!("{:#}", err).to_lowercase().contains("not found or already removed"));
+}
