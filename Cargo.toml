@@ -21,7 +21,9 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 nix = { version = "0.27", features = ["signal"] }
 # rmcp version: latest stable is 1.6.0 as of 2026-05-09 (Task 0 noted 0.1 placeholder)
-rmcp = "1"
+# Default features cover `macros` + `server`; we additionally need `transport-io` for stdio.
+rmcp = { version = "1", features = ["transport-io"] }
+schemars = "1"
 
 [dev-dependencies]
 assert_cmd = "2"

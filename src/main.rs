@@ -26,7 +26,9 @@ async fn main() -> anyhow::Result<()> {
             server::serve(store, &socket).await?;
             Ok(())
         }
-        Command::McpShim { .. } => anyhow::bail!("not yet implemented: mcp-shim"),
+        Command::McpShim { socket, agent_token } => {
+            agents_connector::shim::run(socket, agent_token).await
+        }
         Command::Hook { .. } => anyhow::bail!("not yet implemented: hook"),
     }
 }

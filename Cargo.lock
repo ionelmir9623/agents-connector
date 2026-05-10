@@ -15,6 +15,7 @@ dependencies = [
  "predicates",
  "rmcp",
  "rusqlite",
+ "schemars",
  "serde",
  "serde_json",
  "serial_test",
