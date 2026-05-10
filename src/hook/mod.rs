@@ -7,7 +7,10 @@ use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 
 pub fn run(socket: PathBuf, agent_token: String, event: String, cli_kind: String) -> Result<()> {
+    diag_log(&socket, &cli_kind, &event, "invoked");
+
     if !injects_context(&cli_kind, &event) {
+        diag_log(&socket, &cli_kind, &event, "no-op (cli_kind/event combo not injectable)");
         return Ok(());
     }
 
@@ -42,6 +45,13 @@ pub fn run(socket: PathBuf, agent_token: String, event: String, cli_kind: String
         other => anyhow::bail!("unexpected: {:?}", other),
     };
 
+    diag_log(
+        &socket,
+        &cli_kind,
+        &event,
+        &format!("agent={} since={} new_msgs={}", agent_name, since, msgs.len()),
+    );
+
     if msgs.is_empty() {
         return Ok(());
     }
@@ -52,8 +62,24 @@ pub fn run(socket: PathBuf, agent_token: String, event: String, cli_kind: String
 
     let text = format_messages(&msgs);
     let payload = format_payload(&cli_kind, &text);
+    diag_log(&socket, &cli_kind, &event, &format!("emitting payload: {}", payload));
     println!("{}", payload);
     Ok(())
+}
+
+/// Append a diagnostic line to `<session_dir>/hook_log.txt` for debugging
+/// whether and when adapter hooks fire. Best-effort — failures are silently
+/// ignored so they never break the host CLI.
+fn diag_log(socket: &std::path::Path, cli_kind: &str, event: &str, note: &str) {
+    let Some(session_dir) = socket.parent() else { return };
+    let log_path = session_dir.join("hook_log.txt");
+    let ts = chrono::Utc::now().to_rfc3339();
+    let line = format!("{ts} cli_kind={cli_kind} event={event} :: {note}\n");
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, line.as_bytes()));
 }
 
 fn injects_context(cli_kind: &str, event: &str) -> bool {
