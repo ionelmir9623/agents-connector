@@ -10,7 +10,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Start { session } => {
-            anyhow::bail!("not yet implemented: start {}", session);
+            agents_connector::subcommands::start::run(&session, None)
         }
         Command::Add { cli_kind, name, .. } => {
             anyhow::bail!("not yet implemented: add {} {}", cli_kind, name);
