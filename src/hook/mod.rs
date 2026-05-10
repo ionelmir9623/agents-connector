@@ -87,6 +87,9 @@ fn injects_context(cli_kind: &str, event: &str) -> bool {
         ("claude", "stop") => true,
         ("codex", "post_tool_use") => true,
         ("codex", "user_prompt_submit") => true,
+        ("gemini", "before_agent") => true,
+        ("gemini", "after_tool") => true,
+        ("gemini", "session_start") => true,
         _ => false,
     }
 }
@@ -103,10 +106,9 @@ fn format_messages(msgs: &[MessageDto]) -> String {
 
 fn format_payload(cli_kind: &str, event: &str, text: &str) -> serde_json::Value {
     match cli_kind {
-        // Claude Code: flat additionalContext.
+        // Claude Code: flat top-level field.
         "claude" => serde_json::json!({ "additionalContext": text }),
-        // Codex: nested hookSpecificOutput with required hookEventName field.
-        // Schema per https://developers.openai.com/codex/hooks
+        // Codex: nested under hookSpecificOutput, requires hookEventName.
         "codex" => {
             let hook_event_name = codex_event_name(event);
             serde_json::json!({
@@ -116,6 +118,12 @@ fn format_payload(cli_kind: &str, event: &str, text: &str) -> serde_json::Value 
                 }
             })
         }
+        // Gemini CLI: nested under hookSpecificOutput, NO hookEventName field.
+        "gemini" => serde_json::json!({
+            "hookSpecificOutput": {
+                "additionalContext": text,
+            }
+        }),
         _ => serde_json::json!({}),
     }
 }
@@ -130,5 +138,43 @@ fn codex_event_name(event: &str) -> &'static str {
         // Unknown events: pass through with first-letter-uppercase as a best guess.
         // Codex will error if it doesn't match an event it knows.
         _ => "Unknown",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gemini_payload_omits_hook_event_name() {
+        let payload = format_payload("gemini", "before_agent", "hello");
+        assert_eq!(payload["hookSpecificOutput"]["additionalContext"], "hello");
+        assert!(payload["hookSpecificOutput"]["hookEventName"].is_null());
+    }
+
+    #[test]
+    fn codex_payload_includes_hook_event_name() {
+        let payload = format_payload("codex", "post_tool_use", "hello");
+        assert_eq!(payload["hookSpecificOutput"]["hookEventName"], "PostToolUse");
+        assert_eq!(payload["hookSpecificOutput"]["additionalContext"], "hello");
+    }
+
+    #[test]
+    fn claude_payload_is_flat() {
+        let payload = format_payload("claude", "stop", "hello");
+        assert_eq!(payload["additionalContext"], "hello");
+        assert!(payload["hookSpecificOutput"].is_null());
+    }
+
+    #[test]
+    fn gemini_before_agent_injects() {
+        assert!(injects_context("gemini", "before_agent"));
+        assert!(injects_context("gemini", "after_tool"));
+    }
+
+    #[test]
+    fn gemini_after_agent_does_not_inject() {
+        // AfterAgent CANNOT inject context per gemini docs.
+        assert!(!injects_context("gemini", "after_agent"));
     }
 }
