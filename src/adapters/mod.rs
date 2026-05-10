@@ -1,6 +1,7 @@
 //! CLI adapters: per-CLI config generation for MCP and hooks.
 
 pub mod claude;
+pub mod codex;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CliKind {
