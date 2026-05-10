@@ -19,6 +19,7 @@ pub struct Agent {
     pub token: String,
     pub registered_at: DateTime<Utc>,
     pub removed_at: Option<DateTime<Utc>>,
+    pub workdir: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -77,17 +78,18 @@ impl Store {
                 cli_kind TEXT NOT NULL,
                 token TEXT NOT NULL UNIQUE,
                 registered_at TEXT NOT NULL,
-                removed_at TEXT
+                removed_at TEXT,
+                workdir TEXT
             );
             CREATE INDEX IF NOT EXISTS agents_token_idx ON agents(token);
 
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 from_agent TEXT NOT NULL,
-                to_agent TEXT,                 -- NULL = broadcast
+                to_agent TEXT,
                 text TEXT NOT NULL,
-                ask_id INTEGER,                -- non-null if this message originates from an ask
-                in_reply_to INTEGER,           -- non-null if this message is a reply to an ask
+                ask_id INTEGER,
+                in_reply_to INTEGER,
                 created_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS messages_to_idx ON messages(to_agent, id);
@@ -111,16 +113,27 @@ impl Store {
             );
             CREATE INDEX IF NOT EXISTS replies_ask_idx ON replies(ask_id);
         "#)?;
+
+        // Idempotent column add for v1-created databases.
+        let has_workdir = conn.query_row(
+            "SELECT 1 FROM pragma_table_info('agents') WHERE name = 'workdir'",
+            [],
+            |_| Ok(true),
+        ).optional()?.unwrap_or(false);
+        if !has_workdir {
+            conn.execute("ALTER TABLE agents ADD COLUMN workdir TEXT", [])?;
+        }
+
         Ok(())
     }
 
-    pub fn register_agent(&self, name: &str, cli_kind: &str) -> Result<String> {
+    pub fn register_agent(&self, name: &str, cli_kind: &str, workdir: Option<&str>) -> Result<String> {
         let token = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO agents (name, cli_kind, token, registered_at) VALUES (?1, ?2, ?3, ?4)",
-            params![name, cli_kind, token, now],
+            "INSERT INTO agents (name, cli_kind, token, registered_at, workdir) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![name, cli_kind, token, now, workdir],
         ).map_err(|e| match e {
             rusqlite::Error::SqliteFailure(ref err, Some(ref s))
                 if err.code == rusqlite::ErrorCode::ConstraintViolation
@@ -136,7 +149,7 @@ impl Store {
     pub fn agent_by_token(&self, token: &str) -> Result<Option<Agent>> {
         let conn = self.conn.lock().unwrap();
         let agent = conn.query_row(
-            "SELECT id, name, cli_kind, token, registered_at, removed_at FROM agents WHERE token = ?1 AND removed_at IS NULL",
+            "SELECT id, name, cli_kind, token, registered_at, removed_at, workdir FROM agents WHERE token = ?1 AND removed_at IS NULL",
             params![token],
             |row| Ok(Agent {
                 id: row.get(0)?,
@@ -145,6 +158,7 @@ impl Store {
                 token: row.get(3)?,
                 registered_at: row.get::<_, String>(4)?.parse::<DateTime<Utc>>().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
                 removed_at: row.get::<_, Option<String>>(5)?.map(|s| s.parse::<DateTime<Utc>>()).transpose().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                workdir: row.get::<_, Option<String>>(6)?,
             })
         ).optional()?;
         Ok(agent)
@@ -153,7 +167,7 @@ impl Store {
     pub fn agent_by_name(&self, name: &str) -> Result<Option<Agent>> {
         let conn = self.conn.lock().unwrap();
         let agent = conn.query_row(
-            "SELECT id, name, cli_kind, token, registered_at, removed_at FROM agents WHERE name = ?1",
+            "SELECT id, name, cli_kind, token, registered_at, removed_at, workdir FROM agents WHERE name = ?1",
             params![name],
             |row| Ok(Agent {
                 id: row.get(0)?,
@@ -162,6 +176,7 @@ impl Store {
                 token: row.get(3)?,
                 registered_at: row.get::<_, String>(4)?.parse::<DateTime<Utc>>().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
                 removed_at: row.get::<_, Option<String>>(5)?.map(|s| s.parse::<DateTime<Utc>>()).transpose().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                workdir: row.get::<_, Option<String>>(6)?,
             })
         ).optional()?;
         Ok(agent)
@@ -170,7 +185,7 @@ impl Store {
     pub fn list_agents(&self) -> Result<Vec<Agent>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, cli_kind, token, registered_at, removed_at FROM agents WHERE removed_at IS NULL ORDER BY registered_at"
+            "SELECT id, name, cli_kind, token, registered_at, removed_at, workdir FROM agents WHERE removed_at IS NULL ORDER BY registered_at"
         )?;
         let rows = stmt.query_map([], |row| Ok(Agent {
             id: row.get(0)?,
@@ -179,6 +194,7 @@ impl Store {
             token: row.get(3)?,
             registered_at: row.get::<_, String>(4)?.parse::<DateTime<Utc>>().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
             removed_at: row.get::<_, Option<String>>(5)?.map(|s| s.parse::<DateTime<Utc>>()).transpose().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+            workdir: row.get::<_, Option<String>>(6)?,
         }))?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }

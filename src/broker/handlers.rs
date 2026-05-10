@@ -9,7 +9,7 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
             Ok(None) => Response::Error { message: "unknown agent token".into() },
             Err(e) => Response::Error { message: format!("{:#}", e) },
         },
-        Request::RegisterAgent { name, cli_kind } => match ctx.store.register_agent(&name, &cli_kind) {
+        Request::RegisterAgent { name, cli_kind } => match ctx.store.register_agent(&name, &cli_kind, None) {
             Ok(token) => Response::RegisterAck { agent_token: token },
             Err(e) => Response::Error { message: format!("{:#}", e) },
         },

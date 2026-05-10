@@ -27,7 +27,7 @@ async fn authenticate_with_valid_token_returns_ok() {
     let (_tmp, sock) = spawn_test_broker().await;
     // Pre-register an agent directly via the store so we have a token.
     let store = Store::open(&_tmp.path().join("test.sqlite")).unwrap();
-    let token = store.register_agent("alice", "claude").unwrap();
+    let token = store.register_agent("alice", "claude", None).unwrap();
 
     let mut stream = UnixStream::connect(&sock).await.unwrap();
     let req = Request::Authenticate { agent_token: token };
