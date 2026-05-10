@@ -51,9 +51,9 @@ pub fn generate(
                     "type": "command",
                     "command": format!(
                         "{} hook --socket {} --agent-token {} --event stop",
-                        binary_path.to_string_lossy(),
-                        socket_path.to_string_lossy(),
-                        agent_token
+                        shell_quote(&binary_path.to_string_lossy()),
+                        shell_quote(&socket_path.to_string_lossy()),
+                        shell_quote(agent_token)
                     )
                 }]
             }]
@@ -63,6 +63,14 @@ pub fn generate(
     std::fs::write(&settings_path, serde_json::to_string_pretty(&settings)?)?;
 
     Ok(Generated { mcp_config_path, settings_path })
+}
+
+fn shell_quote(s: &str) -> String {
+    if s.chars().all(|c| c.is_ascii_alphanumeric() || "_-./=:".contains(c)) {
+        s.to_string()
+    } else {
+        format!("'{}'", s.replace('\'', "'\\''"))
+    }
 }
 
 #[cfg(test)]
@@ -87,5 +95,20 @@ mod tests {
         let cmd = settings.pointer("/hooks/Stop/0/hooks/0/command").unwrap().as_str().unwrap();
         assert!(cmd.contains("hook"));
         assert!(cmd.contains("TOKEN-123"));
+    }
+
+    #[test]
+    fn handles_paths_with_spaces() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let agent_dir = tmp.path().join("alice");
+        let binary = std::path::PathBuf::from("/usr/local/bin/agents-connector");
+        let socket = std::path::PathBuf::from("/tmp/with space/sock");
+        let result = generate(&agent_dir, &binary, &socket, "TOKEN-123").unwrap();
+
+        let settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&result.settings_path).unwrap()).unwrap();
+        let cmd = settings.pointer("/hooks/Stop/0/hooks/0/command").unwrap().as_str().unwrap();
+        // Path with spaces must appear quoted in the command string.
+        assert!(cmd.contains("'/tmp/with space/sock'"), "got: {}", cmd);
     }
 }

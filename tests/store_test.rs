@@ -114,3 +114,20 @@ fn ask_and_reply_links_correctly() {
     assert_eq!(replies[0].text, "yes I am");
     assert_eq!(replies[0].from_name, "bob");
 }
+
+#[test]
+fn agent_by_token_excludes_soft_deleted() {
+    let tmp = TempDir::new().unwrap();
+    let db_path = tmp.path().join("test.sqlite");
+    let store = Store::open(&db_path).unwrap();
+
+    let token = store.register_agent("alice", "claude").unwrap();
+    assert!(store.agent_by_token(&token).unwrap().is_some());
+
+    // Manually soft-delete via raw SQL (we don't have a remove() method yet — Plan 2).
+    let conn = rusqlite::Connection::open(&db_path).unwrap();
+    conn.execute("UPDATE agents SET removed_at = ?1 WHERE token = ?2",
+        rusqlite::params!["2026-05-09T10:00:00Z", &token]).unwrap();
+
+    assert!(store.agent_by_token(&token).unwrap().is_none());
+}

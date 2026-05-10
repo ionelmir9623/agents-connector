@@ -136,7 +136,7 @@ impl Store {
     pub fn agent_by_token(&self, token: &str) -> Result<Option<Agent>> {
         let conn = self.conn.lock().unwrap();
         let agent = conn.query_row(
-            "SELECT id, name, cli_kind, token, registered_at, removed_at FROM agents WHERE token = ?1",
+            "SELECT id, name, cli_kind, token, registered_at, removed_at FROM agents WHERE token = ?1 AND removed_at IS NULL",
             params![token],
             |row| Ok(Agent {
                 id: row.get(0)?,
