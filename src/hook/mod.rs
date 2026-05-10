@@ -61,7 +61,7 @@ pub fn run(socket: PathBuf, agent_token: String, event: String, cli_kind: String
     }
 
     let text = format_messages(&msgs);
-    let payload = format_payload(&cli_kind, &text);
+    let payload = format_payload(&cli_kind, &event, &text);
     diag_log(&socket, &cli_kind, &event, &format!("emitting payload: {}", payload));
     println!("{}", payload);
     Ok(())
@@ -101,12 +101,34 @@ fn format_messages(msgs: &[MessageDto]) -> String {
     text
 }
 
-fn format_payload(cli_kind: &str, text: &str) -> serde_json::Value {
+fn format_payload(cli_kind: &str, event: &str, text: &str) -> serde_json::Value {
     match cli_kind {
+        // Claude Code: flat additionalContext.
         "claude" => serde_json::json!({ "additionalContext": text }),
-        "codex" => serde_json::json!({
-            "hookSpecificOutput": { "additionalContext": text }
-        }),
+        // Codex: nested hookSpecificOutput with required hookEventName field.
+        // Schema per https://developers.openai.com/codex/hooks
+        "codex" => {
+            let hook_event_name = codex_event_name(event);
+            serde_json::json!({
+                "hookSpecificOutput": {
+                    "hookEventName": hook_event_name,
+                    "additionalContext": text,
+                }
+            })
+        }
         _ => serde_json::json!({}),
+    }
+}
+
+/// Map our snake_case --event values to Codex's PascalCase hookEventName values.
+fn codex_event_name(event: &str) -> &'static str {
+    match event {
+        "post_tool_use" => "PostToolUse",
+        "user_prompt_submit" => "UserPromptSubmit",
+        "session_start" => "SessionStart",
+        "stop" => "Stop",
+        // Unknown events: pass through with first-letter-uppercase as a best guess.
+        // Codex will error if it doesn't match an event it knows.
+        _ => "Unknown",
     }
 }
