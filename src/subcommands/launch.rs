@@ -4,7 +4,7 @@
 //! session's broker socket, this regenerates the adapter config files (idempotent)
 //! and spawns the CLI in a tmux window of the given session.
 
-use crate::adapters::{claude, CliKind};
+use crate::adapters::{claude, codex, CliKind};
 use crate::{paths, tmux};
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -23,22 +23,34 @@ pub fn launch_in_tmux(spec: &Spec, broker_socket: &Path) -> Result<()> {
     let agent_dir = paths::session_agent_dir(&spec.session, &spec.name)?;
     let exe = std::env::current_exe()?;
 
-    let launch_cmd = match spec.kind {
+    let full_cmd = match spec.kind {
         CliKind::Claude => {
             let generated = claude::generate(&agent_dir, &exe, broker_socket, &spec.token)?;
-            format!(
+            let claude_cmd = format!(
                 "claude --mcp-config {} --settings {}",
                 shell_quote(&generated.mcp_config_path.to_string_lossy()),
                 shell_quote(&generated.settings_path.to_string_lossy())
-            )
+            );
+            // Claude has no --cd; use shell `cd && ` if workdir is set.
+            match spec.workdir.as_ref() {
+                Some(dir) => format!("cd {} && {}", shell_quote(&dir.to_string_lossy()), claude_cmd),
+                None => claude_cmd,
+            }
+        }
+        CliKind::Codex => {
+            let overrides = codex::config_overrides(&exe, broker_socket, &spec.token);
+            let mut parts: Vec<String> = vec!["codex".into()];
+            for ov in &overrides {
+                parts.push("-c".into());
+                parts.push(shell_quote(ov));
+            }
+            if let Some(dir) = spec.workdir.as_ref() {
+                parts.push("--cd".into());
+                parts.push(shell_quote(&dir.to_string_lossy()));
+            }
+            parts.join(" ")
         }
     };
-
-    let workdir_str = spec.workdir.as_ref().map(|p| p.to_string_lossy().to_string());
-    let cd_prefix = workdir_str.as_ref()
-        .map(|d| format!("cd {} && ", shell_quote(d)))
-        .unwrap_or_default();
-    let full_cmd = format!("{}{}", cd_prefix, launch_cmd);
 
     tmux::new_window(&spec.session, &spec.name, &[], &full_cmd)
         .with_context(|| format!("spawning tmux window for agent `{}`", spec.name))?;

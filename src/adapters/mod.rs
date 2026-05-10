@@ -6,18 +6,22 @@ pub mod codex;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CliKind {
     Claude,
-    // Codex, Gemini — Phase 2/3
+    Codex,
 }
 
 impl CliKind {
     pub fn parse(s: &str) -> anyhow::Result<Self> {
         match s {
             "claude" => Ok(CliKind::Claude),
-            other => anyhow::bail!("unsupported cli kind: {}. Phase 1 supports: claude.", other),
+            "codex" => Ok(CliKind::Codex),
+            other => anyhow::bail!("unsupported cli kind: {}. Supported: claude, codex.", other),
         }
     }
 
     pub fn as_str(self) -> &'static str {
-        match self { CliKind::Claude => "claude" }
+        match self {
+            CliKind::Claude => "claude",
+            CliKind::Codex => "codex",
+        }
     }
 }
