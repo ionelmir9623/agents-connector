@@ -19,7 +19,13 @@ async fn main() -> anyhow::Result<()> {
         Command::Stop { session, .. } => anyhow::bail!("not yet implemented: stop {}", session),
         Command::Attach { session } => anyhow::bail!("not yet implemented: attach {}", session),
         Command::Tail { .. } => anyhow::bail!("not yet implemented: tail"),
-        Command::Broker { .. } => anyhow::bail!("not yet implemented: broker"),
+        Command::Broker { socket, db } => {
+            use agents_connector::broker::{server, store::Store};
+            use std::sync::Arc;
+            let store = Arc::new(Store::open(&db)?);
+            server::serve(store, &socket).await?;
+            Ok(())
+        }
         Command::McpShim { .. } => anyhow::bail!("not yet implemented: mcp-shim"),
         Command::Hook { .. } => anyhow::bail!("not yet implemented: hook"),
     }
