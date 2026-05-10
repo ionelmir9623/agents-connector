@@ -44,3 +44,31 @@ async fn authenticate_with_valid_token_returns_ok() {
         other => panic!("unexpected response: {:?}", other),
     }
 }
+
+#[tokio::test]
+async fn register_agent_returns_token_and_list_includes_it() {
+    let (_tmp, sock) = spawn_test_broker().await;
+
+    let mut stream = UnixStream::connect(&sock).await.unwrap();
+    let req = Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into() };
+    write_frame_async(&mut stream, &serde_json::to_vec(&req).unwrap()).await.unwrap();
+    let frame = read_frame_async(&mut stream).await.unwrap();
+    let resp: Response = serde_json::from_slice(&frame).unwrap();
+    let token = match resp {
+        Response::RegisterAck { agent_token } => agent_token,
+        other => panic!("unexpected: {:?}", other),
+    };
+    assert!(!token.is_empty());
+
+    let req = Request::ListAgents;
+    write_frame_async(&mut stream, &serde_json::to_vec(&req).unwrap()).await.unwrap();
+    let frame = read_frame_async(&mut stream).await.unwrap();
+    let resp: Response = serde_json::from_slice(&frame).unwrap();
+    match resp {
+        Response::Agents { agents } => {
+            assert_eq!(agents.len(), 1);
+            assert_eq!(agents[0].name, "alice");
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}

@@ -17,6 +17,19 @@ pub async fn dispatch(
             let _ = shutdown_tx.send(());
             Response::Ok
         }
+        Request::RegisterAgent { name, cli_kind } => match store.register_agent(&name, &cli_kind) {
+            Ok(token) => Response::RegisterAck { agent_token: token },
+            Err(e) => Response::Error { message: format!("{:#}", e) },
+        },
+        Request::ListAgents => match store.list_agents() {
+            Ok(agents) => Response::Agents {
+                agents: agents.into_iter().map(|a| crate::ipc::AgentDto {
+                    name: a.name,
+                    cli_kind: a.cli_kind,
+                }).collect(),
+            },
+            Err(e) => Response::Error { message: format!("{:#}", e) },
+        },
         _ => Response::Error { message: "not yet implemented".into() },
     }
 }

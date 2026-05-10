@@ -22,6 +22,7 @@ pub enum Request {
     ListAgents,
     /// Subscribe to live message stream (for `tail`).
     SubscribeStream,
+    RegisterAgent { name: String, cli_kind: String },
     /// Graceful shutdown signal (used by `stop`).
     Shutdown,
 }
@@ -30,6 +31,7 @@ pub enum Request {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Response {
     Ok,
+    RegisterAck { agent_token: String },
     AgentInfo { name: String, cli_kind: String },
     TellAck { message_id: i64 },
     AskAck { ask_id: i64 },
