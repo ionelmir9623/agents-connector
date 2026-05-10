@@ -37,6 +37,12 @@ pub enum Command {
         #[arg(long)]
         session: Option<String>,
     },
+    /// Resume a stopped session (re-spawn broker + optionally re-launch agents).
+    Resume {
+        session: String,
+        #[arg(long, help = "Skip auto-relaunching saved agents")]
+        no_agents: bool,
+    },
     /// Stop a running session.
     Stop {
         session: String,

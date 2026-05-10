@@ -22,6 +22,9 @@ async fn main() -> anyhow::Result<()> {
         Command::Restart { name, session } => {
             agents_connector::subcommands::restart::run(&name, session).await
         }
+        Command::Resume { session, no_agents } => {
+            agents_connector::subcommands::resume::run(&session, no_agents).await
+        }
         Command::Stop { session, kill_tmux } => {
             agents_connector::subcommands::stop::run(&session, kill_tmux).await
         }

@@ -4,6 +4,7 @@ pub mod launch;
 pub mod list;
 pub mod remove;
 pub mod restart;
+pub mod resume;
 pub mod start;
 pub mod stop;
 pub mod tail;
