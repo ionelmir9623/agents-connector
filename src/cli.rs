@@ -62,6 +62,8 @@ pub enum Command {
         socket: std::path::PathBuf,
         #[arg(long)]
         db: std::path::PathBuf,
+        #[arg(long)]
+        session: Option<String>,
     },
     /// Internal: run the MCP shim. Users should not invoke directly.
     #[command(hide = true)]

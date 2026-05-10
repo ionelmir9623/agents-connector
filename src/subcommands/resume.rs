@@ -41,6 +41,7 @@ pub async fn run(session: &str, no_agents: bool) -> Result<()> {
             "broker",
             "--socket", &socket.to_string_lossy(),
             "--db", &db.to_string_lossy(),
+            "--session", session,
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::from(log_file))

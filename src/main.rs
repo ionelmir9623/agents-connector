@@ -30,11 +30,11 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Attach { session } => agents_connector::subcommands::attach::run(&session),
         Command::Tail { session } => agents_connector::subcommands::tail::run(session).await,
-        Command::Broker { socket, db } => {
+        Command::Broker { socket, db, session } => {
             use agents_connector::broker::{server, store::Store};
             use std::sync::Arc;
             let store = Arc::new(Store::open(&db)?);
-            server::serve(store, &socket).await?;
+            server::serve(store, &socket, session).await?;
             Ok(())
         }
         Command::McpShim { socket, agent_token } => {

@@ -14,16 +14,18 @@ pub struct BrokerCtx {
     pub reply_notifiers: Mutex<HashMap<i64, broadcast::Sender<()>>>,
     pub shutdown_tx: broadcast::Sender<()>,
     pub message_stream: broadcast::Sender<MessageDto>,
+    pub session: Option<String>,
 }
 
 impl BrokerCtx {
-    pub fn new(store: Arc<Store>, shutdown_tx: broadcast::Sender<()>) -> Self {
+    pub fn new(store: Arc<Store>, shutdown_tx: broadcast::Sender<()>, session: Option<String>) -> Self {
         let (msg_tx, _) = broadcast::channel::<MessageDto>(256);
         Self {
             store,
             reply_notifiers: Mutex::new(HashMap::new()),
             shutdown_tx,
             message_stream: msg_tx,
+            session,
         }
     }
 
@@ -44,7 +46,7 @@ impl BrokerCtx {
 
 /// Run the broker server, listening on `socket_path` and using `store` for persistence.
 /// Returns when a Shutdown request is received.
-pub async fn serve(store: Arc<Store>, socket_path: &Path) -> Result<()> {
+pub async fn serve(store: Arc<Store>, socket_path: &Path, session: Option<String>) -> Result<()> {
     if socket_path.exists() {
         std::fs::remove_file(socket_path)?;
     }
@@ -55,7 +57,7 @@ pub async fn serve(store: Arc<Store>, socket_path: &Path) -> Result<()> {
     info!("broker listening on {}", socket_path.display());
 
     let (shutdown_tx, mut shutdown_rx) = broadcast::channel::<()>(1);
-    let ctx = Arc::new(BrokerCtx::new(store, shutdown_tx.clone()));
+    let ctx = Arc::new(BrokerCtx::new(store, shutdown_tx.clone(), session));
 
     loop {
         tokio::select! {

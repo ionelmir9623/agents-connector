@@ -12,7 +12,7 @@ async fn spawn_broker() -> (TempDir, std::path::PathBuf) {
     let store = Arc::new(Store::open(&db).unwrap());
     let sock_clone = sock.clone();
     tokio::spawn(async move {
-        server::serve(store, &sock_clone).await.unwrap();
+        server::serve(store, &sock_clone, None).await.unwrap();
     });
     for _ in 0..50 {
         if sock.exists() { break; }
