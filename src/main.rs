@@ -19,7 +19,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Stop { session, kill_tmux } => {
             agents_connector::subcommands::stop::run(&session, kill_tmux).await
         }
-        Command::Attach { session } => anyhow::bail!("not yet implemented: attach {}", session),
+        Command::Attach { session } => agents_connector::subcommands::attach::run(&session),
         Command::Tail { .. } => anyhow::bail!("not yet implemented: tail"),
         Command::Broker { socket, db } => {
             use agents_connector::broker::{server, store::Store};
