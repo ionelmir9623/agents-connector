@@ -29,8 +29,9 @@ pub fn new_detached_session(name: &str, workdir: Option<&PathBuf>) -> Result<()>
 
 pub fn split_window_below(session: &str, percent: u32, command: &str) -> Result<()> {
     let target = format!("{}:0", session);
+    // -d: do not move focus into the new (bottom) pane; user's cursor stays on the top pane.
     let status = Command::new("tmux")
-        .args(["split-window", "-t", &target, "-v", "-p", &percent.to_string(), command])
+        .args(["split-window", "-d", "-t", &target, "-v", "-p", &percent.to_string(), command])
         .status()
         .context("running `tmux split-window`")?;
     if !status.success() {
