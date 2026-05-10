@@ -12,8 +12,8 @@ async fn main() -> anyhow::Result<()> {
         Command::Start { session } => {
             agents_connector::subcommands::start::run(&session, None)
         }
-        Command::Add { cli_kind, name, .. } => {
-            anyhow::bail!("not yet implemented: add {} {}", cli_kind, name);
+        Command::Add { cli_kind, name, session, workdir } => {
+            agents_connector::subcommands::add::run(cli_kind, name, session, workdir).await
         }
         Command::List => agents_connector::subcommands::list::run(),
         Command::Stop { session, kill_tmux } => {
