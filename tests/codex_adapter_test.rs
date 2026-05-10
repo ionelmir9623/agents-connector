@@ -9,7 +9,7 @@ fn produces_feature_flag_mcp_and_hook_overrides() {
     assert_eq!(overrides.len(), 5);
 
     let joined = overrides.join(" ");
-    assert!(joined.contains("features.codex_hooks=true"));
+    assert!(joined.contains("features.hooks=true"));
     assert!(joined.contains("mcp_servers.agents_connector"));
     assert!(joined.contains("hooks.PostToolUse"));
     assert!(joined.contains("hooks.UserPromptSubmit"));

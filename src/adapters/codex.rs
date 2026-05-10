@@ -5,11 +5,15 @@
 //! values per invocation; the value is parsed as TOML.
 //!
 //! We use `-c` overrides to inject:
-//!   1. The `codex_hooks` feature flag (gated off by default).
+//!   1. The `hooks` feature flag (gated off by default; `codex_hooks` is the deprecated old name).
 //!   2. An `agents_connector` MCP server entry under `[mcp_servers]`.
 //!   3. `[[hooks.PostToolUse]]` and `[[hooks.UserPromptSubmit]]` arrays
 //!      with nested `[[hooks.<event>.hooks]]` arrays of `{ type = "command", command = "..." }`
 //!      so new messages can be injected as `hookSpecificOutput.additionalContext`.
+//!
+//! Codex requires the user to explicitly approve each hook the first time it runs
+//! (security gate). Open `/hooks` in the codex TUI and approve our two hooks once
+//! per agent — they're persisted as approved after that.
 //!
 //! Schema reference: https://developers.openai.com/codex/hooks
 //!
@@ -33,7 +37,8 @@ pub fn config_overrides(
     let token = toml_string(agent_token);
 
     // Enable hooks (gated off by default in current codex versions).
-    let feature_flag = "features.codex_hooks=true".to_string();
+    // The flag name is `hooks` in current codex; older versions used `codex_hooks` (deprecated).
+    let feature_flag = "features.hooks=true".to_string();
 
     // MCP server — agents_connector points at our shim subprocess.
     let mcp_command = format!("mcp_servers.agents_connector.command={}", bin);
@@ -110,7 +115,7 @@ mod tests {
         let overrides = config_overrides(&bin, &sock, "TOK-99");
 
         assert_eq!(overrides.len(), 5);
-        assert_eq!(overrides[0], "features.codex_hooks=true");
+        assert_eq!(overrides[0], "features.hooks=true");
         assert!(overrides[1].starts_with("mcp_servers.agents_connector.command="));
         assert!(overrides[2].starts_with("mcp_servers.agents_connector.args="));
         assert!(overrides[3].starts_with("hooks.PostToolUse="));
