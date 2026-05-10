@@ -1,6 +1,6 @@
 use crate::broker::handlers;
 use crate::broker::store::Store;
-use crate::ipc::{read_frame_async, write_frame_async, Request};
+use crate::ipc::{read_frame_async, write_frame_async, MessageDto, Request, Response};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::Path;
@@ -13,14 +13,17 @@ pub struct BrokerCtx {
     pub store: Arc<Store>,
     pub reply_notifiers: Mutex<HashMap<i64, broadcast::Sender<()>>>,
     pub shutdown_tx: broadcast::Sender<()>,
+    pub message_stream: broadcast::Sender<MessageDto>,
 }
 
 impl BrokerCtx {
     pub fn new(store: Arc<Store>, shutdown_tx: broadcast::Sender<()>) -> Self {
+        let (msg_tx, _) = broadcast::channel::<MessageDto>(256);
         Self {
             store,
             reply_notifiers: Mutex::new(HashMap::new()),
             shutdown_tx,
+            message_stream: msg_tx,
         }
     }
 
@@ -90,8 +93,29 @@ async fn handle_connection(
             Err(e) => return Err(e.into()),
         };
         let request: Request = serde_json::from_slice(&frame)?;
+        if matches!(request, Request::SubscribeStream) {
+            return run_stream(stream, ctx).await;
+        }
         let response = handlers::dispatch(request, &ctx).await;
         let bytes = serde_json::to_vec(&response)?;
         write_frame_async(&mut stream, &bytes).await?;
+    }
+}
+
+async fn run_stream(mut stream: tokio::net::UnixStream, ctx: Arc<BrokerCtx>) -> Result<()> {
+    let mut rx = ctx.message_stream.subscribe();
+    // Send an Ok ack once subscribed so client knows the stream is live.
+    write_frame_async(&mut stream, &serde_json::to_vec(&Response::Ok)?).await?;
+    loop {
+        match rx.recv().await {
+            Ok(dto) => {
+                let frame = serde_json::to_vec(&Response::StreamEvent { message: dto })?;
+                if write_frame_async(&mut stream, &frame).await.is_err() {
+                    return Ok(()); // client disconnected
+                }
+            }
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(_) => return Ok(()),
+        }
     }
 }

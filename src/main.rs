@@ -20,7 +20,7 @@ async fn main() -> anyhow::Result<()> {
             agents_connector::subcommands::stop::run(&session, kill_tmux).await
         }
         Command::Attach { session } => agents_connector::subcommands::attach::run(&session),
-        Command::Tail { .. } => anyhow::bail!("not yet implemented: tail"),
+        Command::Tail { session } => agents_connector::subcommands::tail::run(session).await,
         Command::Broker { socket, db } => {
             use agents_connector::broker::{server, store::Store};
             use std::sync::Arc;

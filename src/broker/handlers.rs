@@ -22,27 +22,75 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
             },
             Err(e) => Response::Error { message: format!("{:#}", e) },
         },
-        Request::Tell { from, to, text, urgent: _ } => match ctx.store.tell(&from, to.as_deref(), &text) {
-            Ok(id) => Response::TellAck { message_id: id },
-            Err(e) => Response::Error { message: format!("{:#}", e) },
-        },
+        Request::Tell { from, to, text, urgent: _ } => {
+            let from_dto = from.clone();
+            let to_dto = to.clone();
+            let text_dto = text.clone();
+            match ctx.store.tell(&from, to.as_deref(), &text) {
+                Ok(message_id) => {
+                    let dto = crate::ipc::MessageDto {
+                        id: message_id,
+                        from: from_dto,
+                        to: to_dto,
+                        text: text_dto,
+                        ask_id: None,
+                        in_reply_to: None,
+                        created_at: chrono::Utc::now().to_rfc3339(),
+                    };
+                    let _ = ctx.message_stream.send(dto);
+                    Response::TellAck { message_id }
+                }
+                Err(e) => Response::Error { message: format!("{:#}", e) },
+            }
+        }
         Request::ReadMessages { agent, since } => match ctx.store.read_messages_for(&agent, since) {
             Ok(msgs) => Response::Messages {
                 messages: msgs.into_iter().map(message_to_dto).collect(),
             },
             Err(e) => Response::Error { message: format!("{:#}", e) },
         },
-        Request::Ask { from, to, text } => match ctx.store.ask(&from, &to, &text) {
-            Ok(result) => Response::AskAck { ask_id: result.ask_id },
-            Err(e) => Response::Error { message: format!("{:#}", e) },
-        },
-        Request::PostReply { from, ask_id, text } => match ctx.store.post_reply(&from, ask_id, &text) {
-            Ok(result) => {
-                ctx.fire_reply(ask_id).await;
-                Response::ReplyAck { reply_id: result.reply_id }
+        Request::Ask { from, to, text } => {
+            let from_dto = from.clone();
+            let to_dto = to.clone();
+            let text_dto = text.clone();
+            match ctx.store.ask(&from, &to, &text) {
+                Ok(result) => {
+                    let dto = crate::ipc::MessageDto {
+                        id: result.message_id,
+                        from: from_dto,
+                        to: Some(to_dto),
+                        text: text_dto,
+                        ask_id: Some(result.ask_id),
+                        in_reply_to: None,
+                        created_at: chrono::Utc::now().to_rfc3339(),
+                    };
+                    let _ = ctx.message_stream.send(dto);
+                    Response::AskAck { ask_id: result.ask_id }
+                }
+                Err(e) => Response::Error { message: format!("{:#}", e) },
             }
-            Err(e) => Response::Error { message: format!("{:#}", e) },
-        },
+        }
+        Request::PostReply { from, ask_id, text } => {
+            let from_dto = from.clone();
+            let text_dto = text.clone();
+            match ctx.store.post_reply(&from, ask_id, &text) {
+                Ok(result) => {
+                    ctx.fire_reply(ask_id).await;
+                    let dto = crate::ipc::MessageDto {
+                        id: result.message_id,
+                        from: from_dto,
+                        to: Some(result.original_asker),
+                        text: text_dto,
+                        ask_id: None,
+                        in_reply_to: Some(ask_id),
+                        created_at: chrono::Utc::now().to_rfc3339(),
+                    };
+                    let _ = ctx.message_stream.send(dto);
+                    Response::ReplyAck { reply_id: result.reply_id }
+                }
+                Err(e) => Response::Error { message: format!("{:#}", e) },
+            }
+        }
         Request::CheckReplies { ask_id } => match ctx.store.replies_for_ask(ask_id) {
             Ok(replies) => Response::Replies {
                 replies: replies.into_iter().map(reply_to_dto).collect(),
@@ -78,8 +126,8 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
             Response::Ok
         }
         Request::SubscribeStream => {
-            // Implemented in Task 16.
-            Response::Error { message: "subscribe_stream not implemented".into() }
+            // Intercepted by handle_connection before dispatch; this arm is a defensive fallback.
+            Response::Error { message: "subscribe_stream must be handled at connection level".into() }
         }
     }
 }
