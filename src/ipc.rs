@@ -22,7 +22,11 @@ pub enum Request {
     ListAgents,
     /// Subscribe to live message stream (for `tail`).
     SubscribeStream,
-    RegisterAgent { name: String, cli_kind: String },
+    RegisterAgent { name: String, cli_kind: String, workdir: Option<String> },
+    /// Remove an agent (soft-delete). Returns the freed token so caller can clean up files.
+    RemoveAgent { name: String },
+    /// Look up an agent by name. Returns full details (including token + workdir) needed for restart/resume.
+    GetAgent { name: String },
     /// Graceful shutdown signal (used by `stop`).
     Shutdown,
 }
@@ -41,6 +45,15 @@ pub enum Response {
     Agents { agents: Vec<AgentDto> },
     /// Streamed event (one of many) for SubscribeStream.
     StreamEvent { message: MessageDto },
+    /// Full agent details, used by the launcher to relaunch / restart an agent.
+    AgentDetails {
+        name: String,
+        cli_kind: String,
+        token: String,
+        workdir: Option<String>,
+    },
+    /// Removal acknowledgment; carries the freed token.
+    RemoveAck { freed_token: String },
     Error { message: String },
 }
 
