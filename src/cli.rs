@@ -23,6 +23,13 @@ pub enum Command {
     },
     /// List all sessions.
     List,
+    /// Remove an agent from the current session.
+    Remove {
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        session: Option<String>,
+    },
     /// Stop a running session.
     Stop {
         session: String,

@@ -16,6 +16,9 @@ async fn main() -> anyhow::Result<()> {
             agents_connector::subcommands::add::run(cli_kind, name, session, workdir).await
         }
         Command::List => agents_connector::subcommands::list::run(),
+        Command::Remove { name, session } => {
+            agents_connector::subcommands::remove::run(&name, session).await
+        }
         Command::Stop { session, kill_tmux } => {
             agents_connector::subcommands::stop::run(&session, kill_tmux).await
         }
