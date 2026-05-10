@@ -22,7 +22,9 @@ pub async fn run(session: Option<String>) -> Result<()> {
         other => anyhow::bail!("unexpected subscribe response: {:?}", other),
     }
 
-    println!("[{}] tail starting\u{2026}", session);
+    println!("Conversation window for `{}`", session);
+    println!("Add agents with `agents-connector add ...` in the top pane");
+    println!();
     loop {
         let frame = match read_frame_async(&mut s).await {
             Ok(f) => f,
