@@ -30,6 +30,13 @@ pub enum Command {
         #[arg(long)]
         session: Option<String>,
     },
+    /// Restart an agent in place (same identity, fresh model context).
+    Restart {
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        session: Option<String>,
+    },
     /// Stop a running session.
     Stop {
         session: String,
