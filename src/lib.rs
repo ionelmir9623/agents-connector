@@ -1,3 +1,4 @@
+pub mod adapters;
 pub mod broker;
 pub mod cli;
 pub mod ipc;
