@@ -16,7 +16,9 @@ async fn main() -> anyhow::Result<()> {
             anyhow::bail!("not yet implemented: add {} {}", cli_kind, name);
         }
         Command::List => agents_connector::subcommands::list::run(),
-        Command::Stop { session, .. } => anyhow::bail!("not yet implemented: stop {}", session),
+        Command::Stop { session, kill_tmux } => {
+            agents_connector::subcommands::stop::run(&session, kill_tmux).await
+        }
         Command::Attach { session } => anyhow::bail!("not yet implemented: attach {}", session),
         Command::Tail { .. } => anyhow::bail!("not yet implemented: tail"),
         Command::Broker { socket, db } => {
