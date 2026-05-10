@@ -1,6 +1,7 @@
 pub mod adapters;
 pub mod broker;
 pub mod cli;
+pub mod hook;
 pub mod ipc;
 pub mod paths;
 pub mod shim;

@@ -31,6 +31,8 @@ async fn main() -> anyhow::Result<()> {
         Command::McpShim { socket, agent_token } => {
             agents_connector::shim::run(socket, agent_token).await
         }
-        Command::Hook { .. } => anyhow::bail!("not yet implemented: hook"),
+        Command::Hook { socket, agent_token, event } => {
+            agents_connector::hook::run(socket, agent_token, event)
+        }
     }
 }
