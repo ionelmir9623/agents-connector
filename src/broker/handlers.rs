@@ -30,6 +30,27 @@ pub async fn dispatch(
             },
             Err(e) => Response::Error { message: format!("{:#}", e) },
         },
+        Request::Tell { from, to, text, urgent: _ } => {
+            // urgent not handled in v1 (Phase 1) — wake mechanism is Phase 3.
+            match store.tell(&from, to.as_deref(), &text) {
+                Ok(id) => Response::TellAck { message_id: id },
+                Err(e) => Response::Error { message: format!("{:#}", e) },
+            }
+        }
+        Request::ReadMessages { agent, since } => match store.read_messages_for(&agent, since) {
+            Ok(msgs) => Response::Messages {
+                messages: msgs.into_iter().map(|m| crate::ipc::MessageDto {
+                    id: m.id,
+                    from: m.from_name,
+                    to: m.to_name,
+                    text: m.text,
+                    ask_id: m.ask_id,
+                    in_reply_to: m.in_reply_to,
+                    created_at: m.created_at.to_rfc3339(),
+                }).collect(),
+            },
+            Err(e) => Response::Error { message: format!("{:#}", e) },
+        },
         _ => Response::Error { message: "not yet implemented".into() },
     }
 }

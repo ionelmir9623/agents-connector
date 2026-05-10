@@ -72,3 +72,39 @@ async fn register_agent_returns_token_and_list_includes_it() {
         other => panic!("unexpected: {:?}", other),
     }
 }
+
+#[tokio::test]
+async fn tell_and_read_messages_round_trip() {
+    let (_tmp, sock) = spawn_test_broker().await;
+
+    let mut s = UnixStream::connect(&sock).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into() }).unwrap()).await.unwrap();
+    let _ = read_frame_async(&mut s).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into() }).unwrap()).await.unwrap();
+    let _ = read_frame_async(&mut s).await.unwrap();
+
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::Tell {
+        from: "alice".into(), to: Some("bob".into()), text: "hello".into(), urgent: false,
+    }).unwrap()).await.unwrap();
+    let frame = read_frame_async(&mut s).await.unwrap();
+    let resp: Response = serde_json::from_slice(&frame).unwrap();
+    let msg_id = match resp {
+        Response::TellAck { message_id } => message_id,
+        other => panic!("unexpected: {:?}", other),
+    };
+    assert!(msg_id > 0);
+
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::ReadMessages {
+        agent: "bob".into(), since: 0,
+    }).unwrap()).await.unwrap();
+    let frame = read_frame_async(&mut s).await.unwrap();
+    let resp: Response = serde_json::from_slice(&frame).unwrap();
+    match resp {
+        Response::Messages { messages } => {
+            assert_eq!(messages.len(), 1);
+            assert_eq!(messages[0].text, "hello");
+            assert_eq!(messages[0].from, "alice");
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
