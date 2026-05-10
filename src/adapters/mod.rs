@@ -2,6 +2,7 @@
 
 pub mod claude;
 pub mod codex;
+pub mod gemini;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CliKind {
