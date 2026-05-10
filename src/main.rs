@@ -15,7 +15,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Add { cli_kind, name, .. } => {
             anyhow::bail!("not yet implemented: add {} {}", cli_kind, name);
         }
-        Command::List => anyhow::bail!("not yet implemented: list"),
+        Command::List => agents_connector::subcommands::list::run(),
         Command::Stop { session, .. } => anyhow::bail!("not yet implemented: stop {}", session),
         Command::Attach { session } => anyhow::bail!("not yet implemented: attach {}", session),
         Command::Tail { .. } => anyhow::bail!("not yet implemented: tail"),
