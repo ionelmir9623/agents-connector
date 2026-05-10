@@ -108,3 +108,83 @@ async fn tell_and_read_messages_round_trip() {
         other => panic!("unexpected: {:?}", other),
     }
 }
+
+#[tokio::test]
+async fn ask_reply_check_round_trip() {
+    let (_tmp, sock) = spawn_test_broker().await;
+
+    let mut s = UnixStream::connect(&sock).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into() }).unwrap()).await.unwrap();
+    let _ = read_frame_async(&mut s).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into() }).unwrap()).await.unwrap();
+    let _ = read_frame_async(&mut s).await.unwrap();
+
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::Ask {
+        from: "alice".into(), to: "bob".into(), text: "still there?".into(),
+    }).unwrap()).await.unwrap();
+    let frame = read_frame_async(&mut s).await.unwrap();
+    let ask_id = match serde_json::from_slice::<Response>(&frame).unwrap() {
+        Response::AskAck { ask_id } => ask_id,
+        other => panic!("unexpected: {:?}", other),
+    };
+
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::PostReply {
+        from: "bob".into(), ask_id, text: "yes".into(),
+    }).unwrap()).await.unwrap();
+    let frame = read_frame_async(&mut s).await.unwrap();
+    match serde_json::from_slice::<Response>(&frame).unwrap() {
+        Response::ReplyAck { .. } => {}
+        other => panic!("unexpected: {:?}", other),
+    }
+
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::CheckReplies { ask_id }).unwrap()).await.unwrap();
+    let frame = read_frame_async(&mut s).await.unwrap();
+    match serde_json::from_slice::<Response>(&frame).unwrap() {
+        Response::Replies { replies } => {
+            assert_eq!(replies.len(), 1);
+            assert_eq!(replies[0].text, "yes");
+            assert_eq!(replies[0].from, "bob");
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
+
+#[tokio::test]
+async fn wait_for_reply_blocks_then_returns() {
+    let (_tmp, sock) = spawn_test_broker().await;
+
+    let mut s = UnixStream::connect(&sock).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into() }).unwrap()).await.unwrap();
+    let _ = read_frame_async(&mut s).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into() }).unwrap()).await.unwrap();
+    let _ = read_frame_async(&mut s).await.unwrap();
+
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::Ask {
+        from: "alice".into(), to: "bob".into(), text: "ready?".into(),
+    }).unwrap()).await.unwrap();
+    let ask_id = match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
+        Response::AskAck { ask_id } => ask_id,
+        other => panic!("unexpected: {:?}", other),
+    };
+
+    // Spawn a writer that posts a reply after 200ms.
+    let sock_clone = sock.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let mut s2 = UnixStream::connect(&sock_clone).await.unwrap();
+        write_frame_async(&mut s2, &serde_json::to_vec(&Request::PostReply {
+            from: "bob".into(), ask_id, text: "go".into(),
+        }).unwrap()).await.unwrap();
+        let _ = read_frame_async(&mut s2).await.unwrap();
+    });
+
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::WaitForReply { ask_id, timeout_ms: 2000 }).unwrap()).await.unwrap();
+    let frame = read_frame_async(&mut s).await.unwrap();
+    match serde_json::from_slice::<Response>(&frame).unwrap() {
+        Response::Replies { replies } => {
+            assert_eq!(replies.len(), 1);
+            assert_eq!(replies[0].text, "go");
+        }
+        other => panic!("unexpected: {:?}", other),
+    }
+}
