@@ -51,6 +51,14 @@ pub enum Command {
     },
     /// Attach to a running session's tmux.
     Attach { session: String },
+    /// Delete a session entirely: stop broker, kill tmux, remove filesystem state.
+    Delete {
+        /// Session name to delete. Required unless --all is set.
+        session: Option<String>,
+        /// Delete every session on this machine.
+        #[arg(long, conflicts_with = "session")]
+        all: bool,
+    },
     /// Tail the chat transcript of a session.
     Tail {
         session: Option<String>,

@@ -29,6 +29,9 @@ async fn main() -> anyhow::Result<()> {
             agents_connector::subcommands::stop::run(&session, kill_tmux).await
         }
         Command::Attach { session } => agents_connector::subcommands::attach::run(&session),
+        Command::Delete { session, all } => {
+            agents_connector::subcommands::delete::run(session, all).await
+        }
         Command::Tail { session } => agents_connector::subcommands::tail::run(session).await,
         Command::Broker { socket, db, session } => {
             use agents_connector::broker::{server, store::Store};
