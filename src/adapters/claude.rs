@@ -50,7 +50,7 @@ pub fn generate(
                 "hooks": [{
                     "type": "command",
                     "command": format!(
-                        "{} hook --socket {} --agent-token {} --event stop",
+                        "{} hook --socket {} --agent-token {} --event stop --cli-kind claude",
                         shell_quote(&binary_path.to_string_lossy()),
                         shell_quote(&socket_path.to_string_lossy()),
                         shell_quote(agent_token)
@@ -110,5 +110,6 @@ mod tests {
         let cmd = settings.pointer("/hooks/Stop/0/hooks/0/command").unwrap().as_str().unwrap();
         // Path with spaces must appear quoted in the command string.
         assert!(cmd.contains("'/tmp/with space/sock'"), "got: {}", cmd);
+        assert!(cmd.contains("--cli-kind claude"), "got: {}", cmd);
     }
 }

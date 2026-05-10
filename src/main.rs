@@ -40,8 +40,8 @@ async fn main() -> anyhow::Result<()> {
         Command::McpShim { socket, agent_token } => {
             agents_connector::shim::run(socket, agent_token).await
         }
-        Command::Hook { socket, agent_token, event } => {
-            agents_connector::hook::run(socket, agent_token, event)
+        Command::Hook { socket, agent_token, event, cli_kind } => {
+            agents_connector::hook::run(socket, agent_token, event, cli_kind)
         }
     }
 }

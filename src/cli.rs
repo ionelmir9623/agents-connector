@@ -71,7 +71,7 @@ pub enum Command {
         #[arg(long)]
         agent_token: String,
     },
-    /// Internal: invoked by adapter hooks (e.g., Claude Code Stop hook).
+    /// Internal: invoked by adapter hooks (e.g., Claude Code Stop hook, Codex PostToolUse hook).
     #[command(hide = true)]
     Hook {
         #[arg(long)]
@@ -80,5 +80,7 @@ pub enum Command {
         agent_token: String,
         #[arg(long)]
         event: String,
+        #[arg(long, default_value = "claude")]
+        cli_kind: String,
     },
 }
