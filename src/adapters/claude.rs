@@ -4,13 +4,13 @@
 //!   - An MCP config file (mcp.json) that points Claude Code at our shim.
 //!   - A `settings.json` with hooks that call our `hook` subcommand.
 //!
-//! Hook events used: `UserPromptSubmit`, `PostToolUse`, `SessionStart`.
-//! All three support `hookSpecificOutput.additionalContext` per
+//! Hook events used: `UserPromptSubmit`, `PostToolUse`, `SessionStart`, `Stop`.
+//! The first three support `hookSpecificOutput.additionalContext` per
 //! https://code.claude.com/docs/en/hooks.
 //!
-//! Note: Claude's `Stop` hook is NOT used for context injection — Claude's docs
-//! say Stop only supports a top-level `decision: "block"` and ignores
-//! `additionalContext`. v1 incorrectly used Stop and was silently no-op.
+//! Note: Claude's `Stop` hook does NOT inject context — Claude's docs say Stop
+//! only supports a top-level `decision: "block"` and ignores `additionalContext`.
+//! We wire `Stop` anyway so the hook subcommand can write `state = idle` to SQLite.
 
 use anyhow::Result;
 use serde_json::json;
@@ -82,6 +82,13 @@ pub fn generate(
                     "type": "command",
                     "command": hook_cmd("session_start"),
                 }]
+            }],
+            "Stop": [{
+                "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": hook_cmd("stop"),
+                }]
             }]
         }
     });
@@ -120,6 +127,7 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(&result.settings_path).unwrap()).unwrap();
 
         // Three context-injectable hooks must be present (UserPromptSubmit, PostToolUse, SessionStart).
+        // Stop is checked separately below.
         for (event, snake) in [
             ("UserPromptSubmit", "user_prompt_submit"),
             ("PostToolUse", "post_tool_use"),
@@ -137,11 +145,15 @@ mod tests {
             assert!(cmd.contains("--cli-kind claude"), "got: {}", cmd);
         }
 
-        // Stop hook must NOT be present — it can't inject context.
-        assert!(
-            settings.pointer("/hooks/Stop").is_none(),
-            "Stop hook should not be configured (can't inject additionalContext)"
-        );
+        // Stop hook must be present — it updates agent state to idle.
+        // (It doesn't inject additionalContext, but state-writing fires before injection check.)
+        let stop_cmd = settings
+            .pointer("/hooks/Stop/0/hooks/0/command")
+            .expect("Stop hook should be configured for state tracking")
+            .as_str()
+            .unwrap();
+        assert!(stop_cmd.contains("--event stop"), "got: {}", stop_cmd);
+        assert!(stop_cmd.contains("--cli-kind claude"), "got: {}", stop_cmd);
     }
 
     #[test]

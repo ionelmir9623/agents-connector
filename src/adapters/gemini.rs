@@ -40,6 +40,10 @@ pub fn generate(
         "{} hook --socket {} --agent-token {} --event after_tool --cli-kind gemini",
         bin, sock, agent_token
     );
+    let hook_after_agent = format!(
+        "{} hook --socket {} --agent-token {} --event after_agent --cli-kind gemini",
+        bin, sock, agent_token
+    );
 
     let settings = json!({
         "mcpServers": {
@@ -61,6 +65,10 @@ pub fn generate(
             "AfterTool": [{
                 "matchers": ["*"],
                 "command": hook_after_tool,
+            }],
+            "AfterAgent": [{
+                "matchers": ["*"],
+                "command": hook_after_agent,
             }],
         }
     });
@@ -100,12 +108,15 @@ mod tests {
         assert_eq!(mcp["args"][2], "/tmp/sock");
         assert_eq!(mcp["args"][4], "TOK-G");
 
-        // Both hooks present and point at our hook subcommand with correct event + cli-kind.
+        // All three hooks present and point at our hook subcommand with correct event + cli-kind.
         let before = &parsed["hooks"]["BeforeAgent"][0]["command"];
-        let after = &parsed["hooks"]["AfterTool"][0]["command"];
+        let after_tool = &parsed["hooks"]["AfterTool"][0]["command"];
+        let after_agent = &parsed["hooks"]["AfterAgent"][0]["command"];
         assert!(before.as_str().unwrap().contains("--event before_agent"));
         assert!(before.as_str().unwrap().contains("--cli-kind gemini"));
-        assert!(after.as_str().unwrap().contains("--event after_tool"));
-        assert!(after.as_str().unwrap().contains("--cli-kind gemini"));
+        assert!(after_tool.as_str().unwrap().contains("--event after_tool"));
+        assert!(after_tool.as_str().unwrap().contains("--cli-kind gemini"));
+        assert!(after_agent.as_str().unwrap().contains("--event after_agent"));
+        assert!(after_agent.as_str().unwrap().contains("--cli-kind gemini"));
     }
 }

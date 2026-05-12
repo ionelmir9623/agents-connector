@@ -64,6 +64,12 @@ pub fn config_overrides(
         socket_path.to_string_lossy(),
         agent_token,
     );
+    let hook_stop_cmd = format!(
+        "{} hook --socket {} --agent-token {} --event stop --cli-kind codex",
+        binary_path.to_string_lossy(),
+        socket_path.to_string_lossy(),
+        agent_token,
+    );
 
     // Schema (per https://developers.openai.com/codex/hooks):
     //   [[hooks.PostToolUse]]
@@ -81,8 +87,12 @@ pub fn config_overrides(
         "hooks.UserPromptSubmit=[{{ hooks = [{{ type = \"command\", command = {} }}] }}]",
         toml_string(&hook_userprompt_cmd)
     );
+    let stop_override = format!(
+        "hooks.Stop=[{{ hooks = [{{ type = \"command\", command = {} }}] }}]",
+        toml_string(&hook_stop_cmd)
+    );
 
-    vec![feature_flag, mcp_command, mcp_args, post_override, userprompt_override]
+    vec![feature_flag, mcp_command, mcp_args, post_override, userprompt_override, stop_override]
 }
 
 /// TOML-quote a string value with double-quotes, escaping internal quotes and backslashes.
@@ -114,20 +124,24 @@ mod tests {
         let sock = PathBuf::from("/tmp/sock");
         let overrides = config_overrides(&bin, &sock, "TOK-99");
 
-        assert_eq!(overrides.len(), 5);
+        assert_eq!(overrides.len(), 6);
         assert_eq!(overrides[0], "features.hooks=true");
         assert!(overrides[1].starts_with("mcp_servers.agents_connector.command="));
         assert!(overrides[2].starts_with("mcp_servers.agents_connector.args="));
         assert!(overrides[3].starts_with("hooks.PostToolUse="));
         assert!(overrides[4].starts_with("hooks.UserPromptSubmit="));
+        assert!(overrides[5].starts_with("hooks.Stop="));
 
         // Hook overrides must include the nested `type = "command"` form.
         assert!(overrides[3].contains("type = \"command\""));
         assert!(overrides[4].contains("type = \"command\""));
+        assert!(overrides[5].contains("type = \"command\""));
         assert!(overrides[3].contains("TOK-99"));
         assert!(overrides[4].contains("TOK-99"));
+        assert!(overrides[5].contains("TOK-99"));
         assert!(overrides[2].contains("/tmp/sock"));
         assert!(overrides[3].contains("/tmp/sock"));
+        assert!(overrides[5].contains("--event stop"));
     }
 
     #[test]
