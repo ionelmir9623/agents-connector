@@ -9,8 +9,11 @@ use std::path::PathBuf;
 pub fn run(socket: PathBuf, agent_token: String, event: String, cli_kind: String) -> Result<()> {
     diag_log(&socket, &cli_kind, &event, "invoked");
 
-    if !injects_context(&cli_kind, &event) {
-        diag_log(&socket, &cli_kind, &event, "no-op (cli_kind/event combo not injectable)");
+    let state_after = state_for_event(&cli_kind, &event);
+    let injects = injects_context(&cli_kind, &event);
+
+    if state_after.is_none() && !injects {
+        diag_log(&socket, &cli_kind, &event, "no-op (cli_kind/event combo not injectable and no state update)");
         return Ok(());
     }
 
@@ -26,6 +29,21 @@ pub fn run(socket: PathBuf, agent_token: String, event: String, cli_kind: String
         Response::Error { message } => anyhow::bail!("auth failed: {}", message),
         other => anyhow::bail!("unexpected: {:?}", other),
     };
+
+    // Update state if this event has a state transition.
+    if let Some(state) = state_after {
+        let req = Request::SetAgentState {
+            agent_token: agent_token.clone(),
+            state: state.to_string(),
+        };
+        write_frame_sync(&mut stream, &serde_json::to_vec(&req)?)?;
+        let _ = read_frame_sync(&mut stream)?;
+        diag_log(&socket, &cli_kind, &event, &format!("state -> {}", state));
+    }
+
+    if !injects {
+        return Ok(());
+    }
 
     // Read messages since high-water-mark.
     let session_dir = socket.parent()
@@ -65,6 +83,24 @@ pub fn run(socket: PathBuf, agent_token: String, event: String, cli_kind: String
     diag_log(&socket, &cli_kind, &event, &format!("emitting payload: {}", payload));
     println!("{}", payload);
     Ok(())
+}
+
+fn state_for_event(cli_kind: &str, event: &str) -> Option<&'static str> {
+    match (cli_kind, event) {
+        ("claude", "session_start") => Some("idle"),
+        ("claude", "user_prompt_submit") => Some("busy"),
+        ("claude", "post_tool_use") => Some("busy"),
+        ("claude", "stop") => Some("idle"),
+        ("codex", "session_start") => Some("idle"),
+        ("codex", "user_prompt_submit") => Some("busy"),
+        ("codex", "post_tool_use") => Some("busy"),
+        ("codex", "stop") => Some("idle"),
+        ("gemini", "session_start") => Some("idle"),
+        ("gemini", "before_agent") => Some("busy"),
+        ("gemini", "after_tool") => Some("busy"),
+        ("gemini", "after_agent") => Some("idle"),
+        _ => None,
+    }
 }
 
 /// Append a diagnostic line to `<session_dir>/hook_log.txt` for debugging
