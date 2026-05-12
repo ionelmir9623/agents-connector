@@ -9,12 +9,15 @@ use tokio::net::UnixListener;
 use tokio::sync::{broadcast, Mutex};
 use tracing::{error, info};
 
+const WAKE_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(5);
+
 pub struct BrokerCtx {
     pub store: Arc<Store>,
     pub reply_notifiers: Mutex<HashMap<i64, broadcast::Sender<()>>>,
     pub shutdown_tx: broadcast::Sender<()>,
     pub message_stream: broadcast::Sender<MessageDto>,
     pub session: Option<String>,
+    pub last_wake: Mutex<HashMap<String, std::time::Instant>>,
 }
 
 impl BrokerCtx {
@@ -26,6 +29,7 @@ impl BrokerCtx {
             shutdown_tx,
             message_stream: msg_tx,
             session,
+            last_wake: Mutex::new(HashMap::new()),
         }
     }
 
@@ -40,6 +44,20 @@ impl BrokerCtx {
         let map = self.reply_notifiers.lock().await;
         if let Some(tx) = map.get(&ask_id) {
             let _ = tx.send(());
+        }
+    }
+
+    /// Returns true if the per-agent 5-second wake cooldown has elapsed.
+    /// Updates the cooldown timestamp on a true return.
+    pub async fn should_wake_cooldown(&self, agent: &str) -> bool {
+        let mut map = self.last_wake.lock().await;
+        let now = std::time::Instant::now();
+        match map.get(agent) {
+            Some(prev) if now.duration_since(*prev) < WAKE_COOLDOWN => false,
+            _ => {
+                map.insert(agent.to_string(), now);
+                true
+            }
         }
     }
 }

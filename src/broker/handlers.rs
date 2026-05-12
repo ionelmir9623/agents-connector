@@ -31,7 +31,7 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
                 Ok(message_id) => {
                     let dto = crate::ipc::MessageDto {
                         id: message_id,
-                        from: from_dto,
+                        from: from_dto.clone(),
                         to: to_dto,
                         text: text_dto,
                         ask_id: None,
@@ -40,7 +40,10 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
                     };
                     let _ = ctx.message_stream.send(dto);
                     if let (Some(session), Some(agent)) = (ctx.session.as_deref(), urgent_recipient.as_deref()) {
-                        crate::broker::wake::nudge(session, agent, "[agents-connector] urgent message — please check");
+                        if should_wake_agent(ctx, agent).await {
+                            let wake_text = format!("[agents-connector] new message from {} — see additionalContext for content", from_dto);
+                            crate::broker::wake::nudge(session, agent, &wake_text);
+                        }
                     }
                     Response::TellAck { message_id }
                 }
@@ -53,7 +56,7 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
             },
             Err(e) => Response::Error { message: format!("{:#}", e) },
         },
-        Request::Ask { from, to, text } => {
+        Request::Ask { from, to, text, urgent } => {
             let from_dto = from.clone();
             let to_dto = to.clone();
             let text_dto = text.clone();
@@ -61,16 +64,33 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
                 Ok(result) => {
                     let dto = crate::ipc::MessageDto {
                         id: result.message_id,
-                        from: from_dto,
-                        to: Some(to_dto),
+                        from: from_dto.clone(),
+                        to: Some(to_dto.clone()),
                         text: text_dto,
                         ask_id: Some(result.ask_id),
                         in_reply_to: None,
                         created_at: chrono::Utc::now().to_rfc3339(),
                     };
                     let _ = ctx.message_stream.send(dto);
+                    if urgent {
+                        if let Some(session) = ctx.session.as_deref() {
+                            if should_wake_agent(ctx, &to_dto).await {
+                                let wake_text = format!("[agents-connector] new question from {} — see additionalContext for content", from_dto);
+                                crate::broker::wake::nudge(session, &to_dto, &wake_text);
+                            }
+                        }
+                    }
                     Response::AskAck { ask_id: result.ask_id }
                 }
+                Err(e) => Response::Error { message: format!("{:#}", e) },
+            }
+        }
+        Request::SetAgentState { agent_token, state } => {
+            if state != "idle" && state != "busy" {
+                return Response::Error { message: format!("invalid state: {}", state) };
+            }
+            match ctx.store.set_agent_state_by_token(&agent_token, &state) {
+                Ok(()) => Response::Ok,
                 Err(e) => Response::Error { message: format!("{:#}", e) },
             }
         }
@@ -148,6 +168,19 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
             Response::Error { message: "subscribe_stream must be handled at connection level".into() }
         }
     }
+}
+
+/// Returns true if the agent's broker-tracked state is `idle` AND
+/// the per-agent cooldown has elapsed. Updates the cooldown timestamp on a yes.
+async fn should_wake_agent(ctx: &std::sync::Arc<crate::broker::server::BrokerCtx>, agent: &str) -> bool {
+    // 1. State check — never nudge a busy agent.
+    match ctx.store.agent_by_name(agent) {
+        Ok(Some(a)) if a.state == "busy" => return false,
+        Ok(Some(_)) => {} // idle — proceed
+        _ => return false, // unknown agent or DB error
+    }
+    // 2. Cooldown check.
+    ctx.should_wake_cooldown(agent).await
 }
 
 fn message_to_dto(m: crate::broker::store::Message) -> crate::ipc::MessageDto {
