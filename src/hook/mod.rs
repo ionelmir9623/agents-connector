@@ -84,7 +84,11 @@ fn diag_log(socket: &std::path::Path, cli_kind: &str, event: &str, note: &str) {
 
 fn injects_context(cli_kind: &str, event: &str) -> bool {
     match (cli_kind, event) {
-        ("claude", "stop") => true,
+        // Claude Code: Stop CANNOT inject (only decision:"block"). Use the
+        // hookSpecificOutput-supporting events instead.
+        ("claude", "user_prompt_submit") => true,
+        ("claude", "post_tool_use") => true,
+        ("claude", "session_start") => true,
         ("codex", "post_tool_use") => true,
         ("codex", "user_prompt_submit") => true,
         ("gemini", "before_agent") => true,
@@ -120,8 +124,17 @@ fn format_messages(msgs: &[MessageDto]) -> String {
 
 fn format_payload(cli_kind: &str, event: &str, text: &str) -> serde_json::Value {
     match cli_kind {
-        // Claude Code: flat top-level field.
-        "claude" => serde_json::json!({ "additionalContext": text }),
+        // Claude Code: nested under hookSpecificOutput with hookEventName.
+        // Schema per https://code.claude.com/docs/en/hooks.
+        "claude" => {
+            let hook_event_name = claude_event_name(event);
+            serde_json::json!({
+                "hookSpecificOutput": {
+                    "hookEventName": hook_event_name,
+                    "additionalContext": text,
+                }
+            })
+        }
         // Codex: nested under hookSpecificOutput, requires hookEventName.
         "codex" => {
             let hook_event_name = codex_event_name(event);
@@ -139,6 +152,18 @@ fn format_payload(cli_kind: &str, event: &str, text: &str) -> serde_json::Value 
             }
         }),
         _ => serde_json::json!({}),
+    }
+}
+
+/// Map our snake_case --event values to Claude Code's PascalCase hookEventName values.
+fn claude_event_name(event: &str) -> &'static str {
+    match event {
+        "user_prompt_submit" => "UserPromptSubmit",
+        "post_tool_use" => "PostToolUse",
+        "session_start" => "SessionStart",
+        "pre_tool_use" => "PreToolUse",
+        "user_prompt_expansion" => "UserPromptExpansion",
+        _ => "Unknown",
     }
 }
 
@@ -174,10 +199,25 @@ mod tests {
     }
 
     #[test]
-    fn claude_payload_is_flat() {
-        let payload = format_payload("claude", "stop", "hello");
-        assert_eq!(payload["additionalContext"], "hello");
-        assert!(payload["hookSpecificOutput"].is_null());
+    fn claude_payload_is_nested_with_hook_event_name() {
+        // Claude's Stop hook can't inject, so we use UserPromptSubmit/PostToolUse/SessionStart.
+        let payload = format_payload("claude", "user_prompt_submit", "hello");
+        assert_eq!(payload["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit");
+        assert_eq!(payload["hookSpecificOutput"]["additionalContext"], "hello");
+        assert!(payload["additionalContext"].is_null());
+    }
+
+    #[test]
+    fn claude_stop_event_is_not_injectable() {
+        // Stop can't inject context — only decision:"block". Confirm we treat it as no-op.
+        assert!(!injects_context("claude", "stop"));
+    }
+
+    #[test]
+    fn claude_session_start_injects() {
+        assert!(injects_context("claude", "session_start"));
+        let payload = format_payload("claude", "session_start", "hi");
+        assert_eq!(payload["hookSpecificOutput"]["hookEventName"], "SessionStart");
     }
 
     #[test]

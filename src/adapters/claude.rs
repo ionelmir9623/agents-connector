@@ -2,7 +2,15 @@
 //!
 //! Generates:
 //!   - An MCP config file (mcp.json) that points Claude Code at our shim.
-//!   - A `settings.json` with a Stop hook that calls our `hook` subcommand.
+//!   - A `settings.json` with hooks that call our `hook` subcommand.
+//!
+//! Hook events used: `UserPromptSubmit`, `PostToolUse`, `SessionStart`.
+//! All three support `hookSpecificOutput.additionalContext` per
+//! https://code.claude.com/docs/en/hooks.
+//!
+//! Note: Claude's `Stop` hook is NOT used for context injection — Claude's docs
+//! say Stop only supports a top-level `decision: "block"` and ignores
+//! `additionalContext`. v1 incorrectly used Stop and was silently no-op.
 
 use anyhow::Result;
 use serde_json::json;
@@ -17,7 +25,7 @@ pub struct Generated {
 ///
 /// Layout:
 ///   <agent_dir>/mcp.json       — Claude --mcp-config target
-///   <agent_dir>/settings.json  — Claude --settings target (with Stop hook)
+///   <agent_dir>/settings.json  — Claude --settings target (with hooks)
 pub fn generate(
     agent_dir: &Path,
     binary_path: &Path,
@@ -42,19 +50,37 @@ pub fn generate(
     let mcp_config_path = agent_dir.join("mcp.json");
     std::fs::write(&mcp_config_path, serde_json::to_string_pretty(&mcp_config)?)?;
 
-    // Stop hook: invoked by Claude Code at the end of every turn.
+    let bin_q = shell_quote(&binary_path.to_string_lossy());
+    let sock_q = shell_quote(&socket_path.to_string_lossy());
+    let token_q = shell_quote(agent_token);
+    let hook_cmd = |event: &str| {
+        format!(
+            "{} hook --socket {} --agent-token {} --event {} --cli-kind claude",
+            bin_q, sock_q, token_q, event,
+        )
+    };
+
     let settings = json!({
         "hooks": {
-            "Stop": [{
+            "UserPromptSubmit": [{
                 "matcher": "",
                 "hooks": [{
                     "type": "command",
-                    "command": format!(
-                        "{} hook --socket {} --agent-token {} --event stop --cli-kind claude",
-                        shell_quote(&binary_path.to_string_lossy()),
-                        shell_quote(&socket_path.to_string_lossy()),
-                        shell_quote(agent_token)
-                    )
+                    "command": hook_cmd("user_prompt_submit"),
+                }]
+            }],
+            "PostToolUse": [{
+                "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": hook_cmd("post_tool_use"),
+                }]
+            }],
+            "SessionStart": [{
+                "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": hook_cmd("session_start"),
                 }]
             }]
         }
@@ -92,9 +118,30 @@ mod tests {
 
         let settings: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&result.settings_path).unwrap()).unwrap();
-        let cmd = settings.pointer("/hooks/Stop/0/hooks/0/command").unwrap().as_str().unwrap();
-        assert!(cmd.contains("hook"));
-        assert!(cmd.contains("TOKEN-123"));
+
+        // Three context-injectable hooks must be present (UserPromptSubmit, PostToolUse, SessionStart).
+        for (event, snake) in [
+            ("UserPromptSubmit", "user_prompt_submit"),
+            ("PostToolUse", "post_tool_use"),
+            ("SessionStart", "session_start"),
+        ] {
+            let path = format!("/hooks/{}/0/hooks/0/command", event);
+            let cmd = settings
+                .pointer(&path)
+                .unwrap_or_else(|| panic!("missing hook for {}", event))
+                .as_str()
+                .unwrap();
+            assert!(cmd.contains("hook"));
+            assert!(cmd.contains("TOKEN-123"));
+            assert!(cmd.contains(&format!("--event {}", snake)), "got: {}", cmd);
+            assert!(cmd.contains("--cli-kind claude"), "got: {}", cmd);
+        }
+
+        // Stop hook must NOT be present — it can't inject context.
+        assert!(
+            settings.pointer("/hooks/Stop").is_none(),
+            "Stop hook should not be configured (can't inject additionalContext)"
+        );
     }
 
     #[test]
@@ -107,9 +154,12 @@ mod tests {
 
         let settings: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&result.settings_path).unwrap()).unwrap();
-        let cmd = settings.pointer("/hooks/Stop/0/hooks/0/command").unwrap().as_str().unwrap();
-        // Path with spaces must appear quoted in the command string.
+        // Path with spaces must appear quoted in at least one of the three hooks.
+        let cmd = settings
+            .pointer("/hooks/UserPromptSubmit/0/hooks/0/command")
+            .unwrap()
+            .as_str()
+            .unwrap();
         assert!(cmd.contains("'/tmp/with space/sock'"), "got: {}", cmd);
-        assert!(cmd.contains("--cli-kind claude"), "got: {}", cmd);
     }
 }

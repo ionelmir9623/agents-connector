@@ -8,33 +8,57 @@ For each entry: cite the docs URL, the version verified against, and the date.
 
 ## Claude Code
 
-**Docs:** https://docs.claude.com/en/docs/claude-code/hooks
+**Docs:** https://code.claude.com/docs/en/hooks
 **MCP config:** `~/.claude/.mcp.json` or `--mcp-config <file>` flag
 **Settings file:** `--settings <file>` flag accepts a JSON file with `hooks`, `env`, etc.
-**Verified against:** v1 implementation 2026-05-09; smoke test confirmed Stop hook fires.
+**Verified against:** 2026-05-11; confirmed Stop hook fires but does NOT inject additionalContext (see correction below).
 
 ### Hooks
 
 | Event | Can inject `additionalContext`? | Notes |
 |---|---|---|
-| `Stop` | Yes (top-level field) | What we use for v1 — fires at end of every turn |
-| `UserPromptSubmit` | Yes | Available; not used in v1 |
-| `PostToolUse` | Yes | Available; not used in v1 |
+| `SessionStart` | Yes | What we use — fires once when the agent boots; perfect for the welcome DM |
+| `UserPromptSubmit` | Yes | What we use — fires when the user submits a prompt |
+| `PostToolUse` | Yes | What we use — fires after every tool call |
+| `PreToolUse` | Yes | Available; not used |
+| `UserPromptExpansion` | Yes | Available; not used |
+| `Stop` | **NO** | Supports only top-level `decision: "block"`. Cannot inject context. **v1 incorrectly used this and was silently no-op.** |
+| `SubagentStop` | No | Same as Stop — block-only |
+| `PreCompact` / `ConfigChange` / `PostToolUseFailure` / `PostToolBatch` | No | Block-only |
 
-**Output schema (Stop):** flat top-level field
+**Output schema (UserPromptSubmit / PostToolUse / SessionStart):** nested with required `hookEventName` field — identical shape to Codex's hooks.
 ```json
-{ "additionalContext": "..." }
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "..."
+  }
+}
 ```
 
-**Settings file shape (`settings.json`) for a Stop hook:**
+**Settings file shape (`settings.json`) — three hooks:**
 ```json
 {
   "hooks": {
-    "Stop": [{
+    "UserPromptSubmit": [{
       "matcher": "",
       "hooks": [{
         "type": "command",
-        "command": "/path/to/script --args ..."
+        "command": "/path/to/script --event user_prompt_submit --cli-kind claude ..."
+      }]
+    }],
+    "PostToolUse": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "/path/to/script --event post_tool_use --cli-kind claude ..."
+      }]
+    }],
+    "SessionStart": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "/path/to/script --event session_start --cli-kind claude ..."
       }]
     }]
   }
@@ -42,6 +66,8 @@ For each entry: cite the docs URL, the version verified against, and the date.
 ```
 
 **Required to enable:** nothing — hooks fire by default once configured in settings.
+
+**Stop-hook correction:** Earlier versions of this doc claimed Stop supports flat `{"additionalContext": "..."}` injection. That was wrong. Per https://code.claude.com/docs/en/hooks the "Decision control" table lists Stop alongside other block-only events. Stop accepts only `{"decision": "block", "reason": "..."}` and ignores everything else. Confirmed empirically: hook log showed Stop firing and emitting the JSON, but Claude's next turn did not see the additionalContext.
 
 ---
 
