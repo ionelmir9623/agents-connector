@@ -120,7 +120,7 @@ async fn ask_reply_check_round_trip() {
     let _ = read_frame_async(&mut s).await.unwrap();
 
     write_frame_async(&mut s, &serde_json::to_vec(&Request::Ask {
-        from: "alice".into(), to: "bob".into(), text: "still there?".into(),
+        from: "alice".into(), to: "bob".into(), text: "still there?".into(), urgent: false,
     }).unwrap()).await.unwrap();
     let frame = read_frame_async(&mut s).await.unwrap();
     let ask_id = match serde_json::from_slice::<Response>(&frame).unwrap() {
@@ -160,7 +160,7 @@ async fn wait_for_reply_blocks_then_returns() {
     let _ = read_frame_async(&mut s).await.unwrap();
 
     write_frame_async(&mut s, &serde_json::to_vec(&Request::Ask {
-        from: "alice".into(), to: "bob".into(), text: "ready?".into(),
+        from: "alice".into(), to: "bob".into(), text: "ready?".into(), urgent: false,
     }).unwrap()).await.unwrap();
     let ask_id = match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
         Response::AskAck { ask_id } => ask_id,
@@ -236,4 +236,51 @@ async fn remove_agent_soft_deletes_via_ipc() {
         Response::Error { message } => assert!(message.contains("not found")),
         other => panic!("unexpected: {:?}", other),
     }
+}
+
+#[tokio::test]
+async fn set_agent_state_updates_via_ipc() {
+    let (_tmp, sock) = spawn_test_broker().await;
+
+    // Register an agent and capture its token.
+    let mut s = UnixStream::connect(&sock).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
+        name: "alice".into(), cli_kind: "claude".into(), workdir: None,
+    }).unwrap()).await.unwrap();
+    let token = match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
+        Response::RegisterAck { agent_token } => agent_token,
+        other => panic!("unexpected: {:?}", other),
+    };
+
+    // Initial state should be idle (from schema default).
+    let store = agents_connector::broker::store::Store::open(&_tmp.path().join("test.sqlite")).unwrap();
+    let agent = store.agent_by_name("alice").unwrap().unwrap();
+    assert_eq!(agent.state, "idle");
+
+    // Send SetAgentState -> busy via IPC.
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::SetAgentState {
+        agent_token: token.clone(),
+        state: "busy".into(),
+    }).unwrap()).await.unwrap();
+    match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
+        Response::Ok => {}
+        other => panic!("unexpected: {:?}", other),
+    }
+
+    // State is now busy.
+    let agent = store.agent_by_name("alice").unwrap().unwrap();
+    assert_eq!(agent.state, "busy");
+
+    // Set back to idle.
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::SetAgentState {
+        agent_token: token,
+        state: "idle".into(),
+    }).unwrap()).await.unwrap();
+    match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
+        Response::Ok => {}
+        other => panic!("unexpected: {:?}", other),
+    }
+
+    let agent = store.agent_by_name("alice").unwrap().unwrap();
+    assert_eq!(agent.state, "idle");
 }

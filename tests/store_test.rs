@@ -186,3 +186,34 @@ fn remove_agent_errors_if_already_removed() {
     let err = store.remove_agent("alice").unwrap_err();
     assert!(format!("{:#}", err).to_lowercase().contains("not found or already removed"));
 }
+
+#[test]
+fn set_agent_state_round_trips() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+    let store = Store::open(&db).unwrap();
+
+    let token = store.register_agent("alice", "claude", None).unwrap();
+
+    // Initial state should be idle (schema default).
+    let agent = store.agent_by_name("alice").unwrap().unwrap();
+    assert_eq!(agent.state, "idle");
+
+    // Set to busy by name.
+    store.set_agent_state_by_name("alice", "busy").unwrap();
+    let agent = store.agent_by_name("alice").unwrap().unwrap();
+    assert_eq!(agent.state, "busy");
+
+    // Set back to idle by token.
+    store.set_agent_state_by_token(&token, "idle").unwrap();
+    let agent = store.agent_by_token(&token).unwrap().unwrap();
+    assert_eq!(agent.state, "idle");
+
+    // Verify list_agents also returns updated state.
+    let agents = store.list_agents().unwrap();
+    assert_eq!(agents[0].state, "idle");
+
+    // set_agent_state_by_token errors on unknown token.
+    let err = store.set_agent_state_by_token("no-such-token", "busy").unwrap_err();
+    assert!(format!("{:#}", err).contains("not found"));
+}

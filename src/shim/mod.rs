@@ -96,6 +96,9 @@ pub struct AskArgs {
     pub to: String,
     /// Question body.
     pub text: String,
+    /// If true (default), auto-wake the recipient if they are idle.
+    #[serde(default)]
+    pub urgent: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -182,12 +185,14 @@ impl Shim {
     }
 
     /// Ask a peer a question; returns an ask id you can pass to wait_for_reply / check_replies.
-    #[tool(description = "Ask another agent a question. Returns the ask id.")]
+    /// By default this auto-wakes the recipient if they are idle (urgent=true).
+    #[tool(description = "Ask another agent a question. Returns the ask id. Auto-wakes the recipient if idle (set urgent=false to suppress).")]
     async fn ask(&self, Parameters(args): Parameters<AskArgs>) -> Result<String, ErrorData> {
         let req = Request::Ask {
             from: self.client.agent_name.clone(),
             to: args.to,
             text: args.text,
+            urgent: args.urgent.unwrap_or(true),
         };
         match self.client.request(req).await.map_err(ipc_err)? {
             Response::AskAck { ask_id } => Ok(ask_id.to_string()),

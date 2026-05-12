@@ -16,4 +16,5 @@ fn writes_settings_with_required_keys() {
     assert!(body.contains("\"agents_connector\""));
     assert!(body.contains("\"BeforeAgent\""));
     assert!(body.contains("\"AfterTool\""));
+    assert!(body.contains("\"AfterAgent\""));
 }

@@ -41,7 +41,7 @@ async fn alice_asks_bob_who_replies_and_alice_sees_reply() {
 
     // alice asks bob.
     write_frame_async(&mut alice, &serde_json::to_vec(&Request::Ask {
-        from: "alice".into(), to: "bob".into(), text: "are you ready?".into(),
+        from: "alice".into(), to: "bob".into(), text: "are you ready?".into(), urgent: false,
     }).unwrap()).await.unwrap();
     let ask_id = match serde_json::from_slice::<Response>(&read_frame_async(&mut alice).await.unwrap()).unwrap() {
         Response::AskAck { ask_id } => ask_id,

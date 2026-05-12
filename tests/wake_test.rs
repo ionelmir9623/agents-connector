@@ -54,3 +54,109 @@ async fn urgent_tell_completes_with_wake_disabled() {
 
     std::env::remove_var("AGENTS_CONNECTOR_DISABLE_WAKE");
 }
+
+#[tokio::test]
+async fn urgent_ask_completes_with_wake_disabled() {
+    std::env::set_var("AGENTS_CONNECTOR_DISABLE_WAKE", "1");
+
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+    let sock = tmp.path().join("broker.sock");
+    let store = Arc::new(Store::open(&db).unwrap());
+    let sock_clone = sock.clone();
+    tokio::spawn(async move {
+        server::serve(store, &sock_clone, Some("test-session".into())).await.unwrap();
+    });
+    for _ in 0..50 {
+        if sock.exists() { break; }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    let mut s = UnixStream::connect(&sock).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
+        name: "alice".into(), cli_kind: "claude".into(), workdir: None,
+    }).unwrap()).await.unwrap();
+    let _ = read_frame_async(&mut s).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
+        name: "bob".into(), cli_kind: "claude".into(), workdir: None,
+    }).unwrap()).await.unwrap();
+    let _ = read_frame_async(&mut s).await.unwrap();
+
+    // Send an URGENT ask; with wake disabled this should still ack normally.
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::Ask {
+        from: "alice".into(),
+        to: "bob".into(),
+        text: "are you ready?".into(),
+        urgent: true,
+    }).unwrap()).await.unwrap();
+    let frame = read_frame_async(&mut s).await.unwrap();
+    let resp: Response = serde_json::from_slice(&frame).unwrap();
+    match resp {
+        Response::AskAck { ask_id } => assert!(ask_id > 0),
+        other => panic!("unexpected: {:?}", other),
+    }
+
+    std::env::remove_var("AGENTS_CONNECTOR_DISABLE_WAKE");
+}
+
+#[tokio::test]
+async fn wake_skips_busy_agent() {
+    std::env::set_var("AGENTS_CONNECTOR_DISABLE_WAKE", "1");
+
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+    let sock = tmp.path().join("broker.sock");
+    let store = Arc::new(Store::open(&db).unwrap());
+    let sock_clone = sock.clone();
+    tokio::spawn(async move {
+        server::serve(store, &sock_clone, Some("test-session".into())).await.unwrap();
+    });
+    for _ in 0..50 {
+        if sock.exists() { break; }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    let mut s = UnixStream::connect(&sock).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
+        name: "alice".into(), cli_kind: "claude".into(), workdir: None,
+    }).unwrap()).await.unwrap();
+    let token = match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
+        Response::RegisterAck { agent_token } => agent_token,
+        other => panic!("unexpected: {:?}", other),
+    };
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
+        name: "bob".into(), cli_kind: "claude".into(), workdir: None,
+    }).unwrap()).await.unwrap();
+    let _ = read_frame_async(&mut s).await.unwrap();
+
+    // Set alice's state to busy via SetAgentState IPC.
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::SetAgentState {
+        agent_token: token,
+        state: "busy".into(),
+    }).unwrap()).await.unwrap();
+    match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
+        Response::Ok => {}
+        other => panic!("unexpected: {:?}", other),
+    }
+
+    // Send an urgent Tell to alice (who is busy). Should complete without error.
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::Tell {
+        from: "bob".into(),
+        to: Some("alice".into()),
+        text: "hello while busy".into(),
+        urgent: true,
+    }).unwrap()).await.unwrap();
+    let frame = read_frame_async(&mut s).await.unwrap();
+    let resp: Response = serde_json::from_slice(&frame).unwrap();
+    match resp {
+        Response::TellAck { message_id } => assert!(message_id > 0),
+        other => panic!("unexpected: {:?}", other),
+    }
+
+    // Verify alice's state is still busy (the message is queued, not lost).
+    let store2 = Store::open(&db).unwrap();
+    let agent = store2.agent_by_name("alice").unwrap().unwrap();
+    assert_eq!(agent.state, "busy");
+
+    std::env::remove_var("AGENTS_CONNECTOR_DISABLE_WAKE");
+}
