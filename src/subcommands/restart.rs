@@ -26,6 +26,15 @@ pub async fn run(name: &str, session: Option<String>) -> Result<()> {
     };
     drop(s);
 
+    // 1b. Reset agent state to idle before relaunch — clears any wedged busy state.
+    let mut s = UnixStream::connect(&socket).await.context("connecting to broker for state reset")?;
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::SetAgentState {
+        agent_token: token.clone(),
+        state: "idle".into(),
+    })?).await?;
+    let _ = read_frame_async(&mut s).await?;
+    drop(s);
+
     let kind = CliKind::parse(&cli_kind_str)?;
 
     // 2. Kill the existing tmux window (no-op if already dead).
