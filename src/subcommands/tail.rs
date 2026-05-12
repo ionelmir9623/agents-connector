@@ -33,6 +33,8 @@ pub async fn run(session: Option<String>) -> Result<()> {
         };
         let resp: Response = serde_json::from_slice(&frame)?;
         if let Response::StreamEvent { message } = resp {
+            // ANSI bold ASCII dashes — separates each message visually in the tail pane.
+            const SEP: &str = "\x1b[1m------------------------------------------------------------\x1b[0m";
             let to = message.to.clone().unwrap_or_else(|| "@everyone".into());
             // created_at is RFC3339: "2026-05-09T10:00:00+00:00" — slice [11..19] = "HH:MM:SS"
             let time_part = if message.created_at.len() >= 19 {
@@ -40,6 +42,7 @@ pub async fn run(session: Option<String>) -> Result<()> {
             } else {
                 &message.created_at
             };
+            println!("{}", SEP);
             println!(
                 "{}  {:>10} \u{2192} {:<10}  {}",
                 time_part, message.from, to, message.text
