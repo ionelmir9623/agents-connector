@@ -95,12 +95,26 @@ fn injects_context(cli_kind: &str, event: &str) -> bool {
 }
 
 fn format_messages(msgs: &[MessageDto]) -> String {
-    let mut text = String::from("[agents-connector] You have new messages:\n");
+    let has_ask = msgs.iter().any(|m| m.ask_id.is_some());
+    let mut text = if has_ask {
+        String::from("[agents-connector] You have new messages, including an incoming ask. Address asks via the `post_reply` tool when appropriate.\n\n")
+    } else {
+        String::from("[agents-connector] You have new messages:\n\n")
+    };
     for m in msgs {
         let to = m.to.as_deref().unwrap_or("@everyone");
-        text.push_str(&format!("- from {} → {}: {}\n", m.from, to, m.text));
+        match m.ask_id {
+            Some(ask_id) => text.push_str(&format!(
+                "ASK from `{}` (ask_id={}): {}\n  \u{2192} reply with `post_reply(ask_id={}, text=...)`\n",
+                m.from, ask_id, m.text, ask_id,
+            )),
+            None => text.push_str(&format!(
+                "MESSAGE from `{}` \u{2192} `{}`: {}\n",
+                m.from, to, m.text,
+            )),
+        }
     }
-    text.push_str("\nUse the `read_messages` MCP tool with `since` set to the latest id you've handled to retrieve again, or use `tell`/`ask` to respond.");
+    text.push_str("\nFetch later messages with `read_messages(since=N)`, or use `tell`/`ask` to initiate.");
     text
 }
 
@@ -176,5 +190,39 @@ mod tests {
     fn gemini_after_agent_does_not_inject() {
         // AfterAgent CANNOT inject context per gemini docs.
         assert!(!injects_context("gemini", "after_agent"));
+    }
+
+    #[test]
+    fn format_messages_calls_out_asks() {
+        let msgs = vec![MessageDto {
+            id: 1,
+            from: "writer".into(),
+            to: Some("reviewer".into()),
+            text: "review this".into(),
+            ask_id: Some(42),
+            in_reply_to: None,
+            created_at: "2026-05-11T00:00:00+00:00".into(),
+        }];
+        let out = format_messages(&msgs);
+        assert!(out.contains("incoming ask"));
+        assert!(out.contains("ASK from `writer`"));
+        assert!(out.contains("ask_id=42"));
+        assert!(out.contains("post_reply"));
+    }
+
+    #[test]
+    fn format_messages_plain_tell_no_ask_callout() {
+        let msgs = vec![MessageDto {
+            id: 1,
+            from: "writer".into(),
+            to: Some("reviewer".into()),
+            text: "fyi".into(),
+            ask_id: None,
+            in_reply_to: None,
+            created_at: "2026-05-11T00:00:00+00:00".into(),
+        }];
+        let out = format_messages(&msgs);
+        assert!(!out.contains("incoming ask"));
+        assert!(out.contains("MESSAGE from `writer`"));
     }
 }
