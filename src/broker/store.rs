@@ -20,6 +20,8 @@ pub struct Agent {
     pub registered_at: DateTime<Utc>,
     pub removed_at: Option<DateTime<Utc>>,
     pub workdir: Option<String>,
+    pub state: String,
+    pub state_updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone)]
@@ -79,7 +81,9 @@ impl Store {
                 token TEXT NOT NULL UNIQUE,
                 registered_at TEXT NOT NULL,
                 removed_at TEXT,
-                workdir TEXT
+                workdir TEXT,
+                state TEXT NOT NULL DEFAULT 'idle',
+                state_updated_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00'
             );
             CREATE INDEX IF NOT EXISTS agents_token_idx ON agents(token);
 
@@ -124,6 +128,17 @@ impl Store {
             conn.execute("ALTER TABLE agents ADD COLUMN workdir TEXT", [])?;
         }
 
+        // Idempotent column add for v1/v2-created databases (state tracking).
+        let has_state = conn.query_row(
+            "SELECT 1 FROM pragma_table_info('agents') WHERE name = 'state'",
+            [],
+            |_| Ok(true),
+        ).optional()?.unwrap_or(false);
+        if !has_state {
+            conn.execute("ALTER TABLE agents ADD COLUMN state TEXT NOT NULL DEFAULT 'idle'", [])?;
+            conn.execute("ALTER TABLE agents ADD COLUMN state_updated_at TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00'", [])?;
+        }
+
         Ok(())
     }
 
@@ -149,7 +164,7 @@ impl Store {
     pub fn agent_by_token(&self, token: &str) -> Result<Option<Agent>> {
         let conn = self.conn.lock().unwrap();
         let agent = conn.query_row(
-            "SELECT id, name, cli_kind, token, registered_at, removed_at, workdir FROM agents WHERE token = ?1 AND removed_at IS NULL",
+            "SELECT id, name, cli_kind, token, registered_at, removed_at, workdir, state, state_updated_at FROM agents WHERE token = ?1 AND removed_at IS NULL",
             params![token],
             |row| Ok(Agent {
                 id: row.get(0)?,
@@ -159,6 +174,8 @@ impl Store {
                 registered_at: row.get::<_, String>(4)?.parse::<DateTime<Utc>>().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
                 removed_at: row.get::<_, Option<String>>(5)?.map(|s| s.parse::<DateTime<Utc>>()).transpose().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
                 workdir: row.get::<_, Option<String>>(6)?,
+                state: row.get::<_, String>(7)?,
+                state_updated_at: row.get::<_, String>(8)?.parse::<DateTime<Utc>>().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
             })
         ).optional()?;
         Ok(agent)
@@ -167,7 +184,7 @@ impl Store {
     pub fn agent_by_name(&self, name: &str) -> Result<Option<Agent>> {
         let conn = self.conn.lock().unwrap();
         let agent = conn.query_row(
-            "SELECT id, name, cli_kind, token, registered_at, removed_at, workdir FROM agents WHERE name = ?1 AND removed_at IS NULL",
+            "SELECT id, name, cli_kind, token, registered_at, removed_at, workdir, state, state_updated_at FROM agents WHERE name = ?1 AND removed_at IS NULL",
             params![name],
             |row| Ok(Agent {
                 id: row.get(0)?,
@@ -177,6 +194,8 @@ impl Store {
                 registered_at: row.get::<_, String>(4)?.parse::<DateTime<Utc>>().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
                 removed_at: row.get::<_, Option<String>>(5)?.map(|s| s.parse::<DateTime<Utc>>()).transpose().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
                 workdir: row.get::<_, Option<String>>(6)?,
+                state: row.get::<_, String>(7)?,
+                state_updated_at: row.get::<_, String>(8)?.parse::<DateTime<Utc>>().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
             })
         ).optional()?;
         Ok(agent)
@@ -185,7 +204,7 @@ impl Store {
     pub fn list_agents(&self) -> Result<Vec<Agent>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, name, cli_kind, token, registered_at, removed_at, workdir FROM agents WHERE removed_at IS NULL ORDER BY registered_at"
+            "SELECT id, name, cli_kind, token, registered_at, removed_at, workdir, state, state_updated_at FROM agents WHERE removed_at IS NULL ORDER BY registered_at"
         )?;
         let rows = stmt.query_map([], |row| Ok(Agent {
             id: row.get(0)?,
@@ -195,6 +214,8 @@ impl Store {
             registered_at: row.get::<_, String>(4)?.parse::<DateTime<Utc>>().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
             removed_at: row.get::<_, Option<String>>(5)?.map(|s| s.parse::<DateTime<Utc>>()).transpose().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
             workdir: row.get::<_, Option<String>>(6)?,
+            state: row.get::<_, String>(7)?,
+            state_updated_at: row.get::<_, String>(8)?.parse::<DateTime<Utc>>().map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
         }))?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
@@ -301,6 +322,31 @@ impl Store {
             })
         })?;
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// Update the broker-tracked state of an agent identified by its token.
+    pub fn set_agent_state_by_token(&self, token: &str, state: &str) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn.lock().unwrap();
+        let rows = conn.execute(
+            "UPDATE agents SET state = ?1, state_updated_at = ?2 WHERE token = ?3 AND removed_at IS NULL",
+            params![state, now, token],
+        )?;
+        if rows == 0 {
+            anyhow::bail!("agent not found or removed for state update");
+        }
+        Ok(())
+    }
+
+    /// Update the broker-tracked state of an agent identified by its name.
+    pub fn set_agent_state_by_name(&self, name: &str, state: &str) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn.lock().unwrap();
+        let _ = conn.execute(
+            "UPDATE agents SET state = ?1, state_updated_at = ?2 WHERE name = ?3 AND removed_at IS NULL",
+            params![state, now, name],
+        )?;
+        Ok(())
     }
 
     /// Soft-delete an agent (sets `removed_at`). Returns the agent's token so the

@@ -13,7 +13,8 @@ pub enum Request {
     /// Auth handshake from a shim — identifies the agent.
     Authenticate { agent_token: String },
     Tell { from: String, to: Option<String>, text: String, urgent: bool },
-    Ask { from: String, to: String, text: String },
+    Ask { from: String, to: String, text: String, urgent: bool },
+    SetAgentState { agent_token: String, state: String },
     PostReply { from: String, ask_id: i64, text: String },
     ReadMessages { agent: String, since: i64 },
     CheckReplies { ask_id: i64 },
