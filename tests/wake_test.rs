@@ -160,3 +160,69 @@ async fn wake_skips_busy_agent() {
 
     std::env::remove_var("AGENTS_CONNECTOR_DISABLE_WAKE");
 }
+
+#[tokio::test]
+async fn stale_busy_state_auto_resets_on_wake() {
+    // If an agent's state has been `busy` for > 10 minutes, we treat it as wedged
+    // (missed `stop` hook due to crash) and proceed with the wake. The state is
+    // also reset to `idle` so subsequent reads are accurate.
+    std::env::set_var("AGENTS_CONNECTOR_DISABLE_WAKE", "1");
+
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+    let sock = tmp.path().join("broker.sock");
+    let store = Arc::new(Store::open(&db).unwrap());
+    let sock_clone = sock.clone();
+    tokio::spawn(async move {
+        server::serve(store, &sock_clone, Some("test-session".into())).await.unwrap();
+    });
+    for _ in 0..50 {
+        if sock.exists() { break; }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    let mut s = UnixStream::connect(&sock).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
+        name: "alice".into(), cli_kind: "claude".into(), workdir: None,
+    }).unwrap()).await.unwrap();
+    let _ = read_frame_async(&mut s).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
+        name: "bob".into(), cli_kind: "claude".into(), workdir: None,
+    }).unwrap()).await.unwrap();
+    let _ = read_frame_async(&mut s).await.unwrap();
+
+    // Backdate alice's state to 15 minutes ago by direct SQL UPDATE — simulates
+    // a wedged-busy state from a hook crash 15 minutes ago.
+    {
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        let stale_ts = (chrono::Utc::now() - chrono::Duration::minutes(15)).to_rfc3339();
+        conn.execute(
+            "UPDATE agents SET state = 'busy', state_updated_at = ?1 WHERE name = 'alice'",
+            rusqlite::params![stale_ts],
+        ).unwrap();
+    }
+
+    // Confirm alice is wedged-busy.
+    let store_check = Store::open(&db).unwrap();
+    assert_eq!(store_check.agent_by_name("alice").unwrap().unwrap().state, "busy");
+
+    // Send an urgent Tell. Wake decision should treat alice as idle (stale) and proceed.
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::Tell {
+        from: "bob".into(),
+        to: Some("alice".into()),
+        text: "ping after long silence".into(),
+        urgent: true,
+    }).unwrap()).await.unwrap();
+    let frame = read_frame_async(&mut s).await.unwrap();
+    match serde_json::from_slice::<Response>(&frame).unwrap() {
+        Response::TellAck { message_id } => assert!(message_id > 0),
+        other => panic!("unexpected: {:?}", other),
+    }
+
+    // Now alice's state should have been auto-reset to idle.
+    let store_after = Store::open(&db).unwrap();
+    let alice_after = store_after.agent_by_name("alice").unwrap().unwrap();
+    assert_eq!(alice_after.state, "idle", "stale busy should be auto-reset");
+
+    std::env::remove_var("AGENTS_CONNECTOR_DISABLE_WAKE");
+}

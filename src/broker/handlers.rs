@@ -170,13 +170,30 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
     }
 }
 
-/// Returns true if the agent's broker-tracked state is `idle` AND
+/// How long an agent can be stuck in `busy` state before we treat it as a wedged hook
+/// (missed `stop`/`after_agent` due to crash) and proceed with the wake anyway.
+const STALE_BUSY_AFTER: chrono::Duration = chrono::Duration::minutes(10);
+
+/// Returns true if the agent's broker-tracked state is `idle` (or stale-busy) AND
 /// the per-agent cooldown has elapsed. Updates the cooldown timestamp on a yes.
+///
+/// A `busy` state that hasn't been touched for STALE_BUSY_AFTER is assumed wedged —
+/// we reset it to `idle` and proceed. The cost of being wrong (agent genuinely
+/// busy for 10+ minutes) is just send-keys into a busy pane, which is the same
+/// best-effort failure mode the wake mechanism had before state tracking existed.
 async fn should_wake_agent(ctx: &std::sync::Arc<crate::broker::server::BrokerCtx>, agent: &str) -> bool {
-    // 1. State check — never nudge a busy agent.
+    // 1. State check — never nudge a busy agent unless its busy is stale.
     match ctx.store.agent_by_name(agent) {
-        Ok(Some(a)) if a.state == "busy" => return false,
-        Ok(Some(_)) => {} // idle — proceed
+        Ok(Some(a)) if a.state == "busy" => {
+            let stale = chrono::Utc::now().signed_duration_since(a.state_updated_at) > STALE_BUSY_AFTER;
+            if !stale {
+                return false;
+            }
+            // Wedged-busy recovery: reset to idle so subsequent reads are accurate.
+            let _ = ctx.store.set_agent_state_by_name(agent, "idle");
+            tracing::warn!(agent = %agent, "stale busy state (>10min) auto-reset to idle for wake");
+        }
+        Ok(Some(_)) => {} // already idle — proceed
         _ => return false, // unknown agent or DB error
     }
     // 2. Cooldown check.
