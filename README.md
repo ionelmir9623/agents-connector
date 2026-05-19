@@ -1,16 +1,6 @@
-<!--
-  ┌─────────────────────────────────────────────────────────────────────────┐
-  │ HERO IMAGE — how to add it:                                              │
-  │ 1. Generate the image (see the prompt in the project notes).            │
-  │ 2. Create an `assets/` folder at the repo root and drop the file in,     │
-  │    e.g.  assets/hero.png                                                 │
-  │ 3. Commit it:  git add assets/hero.png && git commit -m "docs: hero img" │
-  │ 4. Delete this comment block and uncomment the line below.               │
-  │ 5. (Optional) GitHub → repo Settings → "Social preview" → upload the     │
-  │    1280×640 version so it shows when the repo is shared on X/Slack/etc.  │
-  └─────────────────────────────────────────────────────────────────────────┘
--->
-<!-- ![agents-connector](assets/hero.png) -->
+<p align="center">
+  <img src="assets/hero.png" alt="agents-connector — connect Claude Code, Codex, and Gemini CLI agents so they can talk to each other" width="100%">
+</p>
 
 <h1 align="center">agents-connector</h1>
 
