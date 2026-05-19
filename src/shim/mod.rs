@@ -7,8 +7,6 @@
 //! back over MCP. It also auto-injects the canonical agent name (learned during
 //! `Authenticate`) into every request that needs it, so the CLI never has to
 //! know what its broker-side identity is.
-//!
-//! See `docs/superpowers/plans/2026-05-09-agents-connector-v1.md` Task 10.
 
 use std::path::PathBuf;
 use std::sync::Arc;

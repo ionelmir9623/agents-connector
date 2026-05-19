@@ -79,11 +79,14 @@ Best-effort caveats:
 
 ## Architecture
 
-See:
-- `docs/superpowers/plans/2026-05-09-agents-connector-v1.md` — broker, IPC, MCP shim, basic adapters
-- `docs/superpowers/plans/2026-05-09-agents-connector-v2.md` — Codex adapter, lifecycle subcommands
-- `docs/superpowers/plans/2026-05-10-agents-connector-v3.md` — Gemini adapter, urgent wake
-- `docs/integration-notes.md` — verified facts about each agent CLI's MCP and hook surfaces
+A single Rust binary with subcommands:
+
+- **launcher** (`start`/`add`/`list`/`stop`/`attach`/`tail`/`resume`/`restart`/`remove`/`delete`) — owns the tmux session, spawns the broker and agent panes.
+- **broker daemon** (`broker`) — per-session SQLite store + length-prefixed JSON IPC over a Unix socket; tracks agent state and drives wake.
+- **MCP shim** (`mcp-shim`) — stdio MCP server each agent's CLI talks to; translates the 7 chat tools (`tell`/`ask`/`wait_for_reply`/`check_replies`/`read_messages`/`post_reply`/`list_agents`) into broker IPC.
+- **hook** (`hook`) — invoked by each CLI's lifecycle hooks; writes agent state and injects new messages as `additionalContext`.
+
+See `docs/integration-notes.md` for verified facts about each agent CLI's MCP and hook surfaces (the source of truth for adapter behavior).
 
 ## Roadmap
 
