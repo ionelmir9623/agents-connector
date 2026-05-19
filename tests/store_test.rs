@@ -7,7 +7,7 @@ fn opens_creates_schema_and_registers_agent() {
     let db_path = tmp.path().join("test.sqlite");
 
     let store = Store::open(&db_path).unwrap();
-    let token = store.register_agent("alice", "claude", None).unwrap();
+    let token = store.register_agent("alice", "claude", None, &[]).unwrap();
     assert!(!token.is_empty());
 
     let by_token = store.agent_by_token(&token).unwrap().unwrap();
@@ -24,8 +24,8 @@ fn rejects_duplicate_agent_name() {
     let db_path = tmp.path().join("test.sqlite");
     let store = Store::open(&db_path).unwrap();
 
-    store.register_agent("alice", "claude", None).unwrap();
-    let err = store.register_agent("alice", "codex", None).unwrap_err();
+    store.register_agent("alice", "claude", None, &[]).unwrap();
+    let err = store.register_agent("alice", "codex", None, &[]).unwrap_err();
     assert!(format!("{:#}", err).to_lowercase().contains("agent already exists"));
 }
 
@@ -35,8 +35,8 @@ fn list_agents_returns_all() {
     let db_path = tmp.path().join("test.sqlite");
     let store = Store::open(&db_path).unwrap();
 
-    store.register_agent("alice", "claude", None).unwrap();
-    store.register_agent("bob", "claude", None).unwrap();
+    store.register_agent("alice", "claude", None, &[]).unwrap();
+    store.register_agent("bob", "claude", None, &[]).unwrap();
     let agents = store.list_agents().unwrap();
     let names: Vec<&str> = agents.iter().map(|a| a.name.as_str()).collect();
     assert!(names.contains(&"alice"));
@@ -49,8 +49,8 @@ fn tells_and_reads_messages() {
     let db = tmp.path().join("test.sqlite");
     let store = Store::open(&db).unwrap();
 
-    let _alice = store.register_agent("alice", "claude", None).unwrap();
-    let _bob = store.register_agent("bob", "claude", None).unwrap();
+    let _alice = store.register_agent("alice", "claude", None, &[]).unwrap();
+    let _bob = store.register_agent("bob", "claude", None, &[]).unwrap();
 
     let msg_id = store.tell("alice", Some("bob"), "hello bob").unwrap();
     assert!(msg_id > 0);
@@ -73,9 +73,9 @@ fn broadcast_tell_visible_to_everyone_but_sender() {
     let db = tmp.path().join("test.sqlite");
     let store = Store::open(&db).unwrap();
 
-    store.register_agent("alice", "claude", None).unwrap();
-    store.register_agent("bob", "claude", None).unwrap();
-    store.register_agent("carol", "claude", None).unwrap();
+    store.register_agent("alice", "claude", None, &[]).unwrap();
+    store.register_agent("bob", "claude", None, &[]).unwrap();
+    store.register_agent("carol", "claude", None, &[]).unwrap();
 
     store.tell("alice", None, "hello everyone").unwrap();
 
@@ -90,8 +90,8 @@ fn ask_and_reply_links_correctly() {
     let db = tmp.path().join("test.sqlite");
     let store = Store::open(&db).unwrap();
 
-    store.register_agent("alice", "claude", None).unwrap();
-    store.register_agent("bob", "claude", None).unwrap();
+    store.register_agent("alice", "claude", None, &[]).unwrap();
+    store.register_agent("bob", "claude", None, &[]).unwrap();
 
     let ask = store.ask("alice", "bob", "are you there?").unwrap();
     assert!(ask.ask_id > 0);
@@ -121,7 +121,7 @@ fn agent_by_token_excludes_soft_deleted() {
     let db_path = tmp.path().join("test.sqlite");
     let store = Store::open(&db_path).unwrap();
 
-    let token = store.register_agent("alice", "claude", None).unwrap();
+    let token = store.register_agent("alice", "claude", None, &[]).unwrap();
     assert!(store.agent_by_token(&token).unwrap().is_some());
 
     // Manually soft-delete via raw SQL (we don't have a remove() method yet — Plan 2).
@@ -138,11 +138,11 @@ fn workdir_round_trips_through_register_and_lookup() {
     let db = tmp.path().join("test.sqlite");
     let store = Store::open(&db).unwrap();
 
-    let token = store.register_agent("alice", "claude", Some("/tmp/workdir")).unwrap();
+    let token = store.register_agent("alice", "claude", Some("/tmp/workdir"), &[]).unwrap();
     let by_token = store.agent_by_token(&token).unwrap().unwrap();
     assert_eq!(by_token.workdir.as_deref(), Some("/tmp/workdir"));
 
-    let token2 = store.register_agent("bob", "claude", None).unwrap();
+    let token2 = store.register_agent("bob", "claude", None, &[]).unwrap();
     let by_token2 = store.agent_by_token(&token2).unwrap().unwrap();
     assert_eq!(by_token2.workdir, None);
 }
@@ -153,7 +153,7 @@ fn remove_agent_soft_deletes_and_returns_token() {
     let db = tmp.path().join("test.sqlite");
     let store = Store::open(&db).unwrap();
 
-    let token = store.register_agent("alice", "claude", None).unwrap();
+    let token = store.register_agent("alice", "claude", None, &[]).unwrap();
     let removed_token = store.remove_agent("alice").unwrap();
     assert_eq!(removed_token, token);
 
@@ -181,7 +181,7 @@ fn remove_agent_errors_if_already_removed() {
     let db = tmp.path().join("test.sqlite");
     let store = Store::open(&db).unwrap();
 
-    store.register_agent("alice", "claude", None).unwrap();
+    store.register_agent("alice", "claude", None, &[]).unwrap();
     store.remove_agent("alice").unwrap();
     let err = store.remove_agent("alice").unwrap_err();
     assert!(format!("{:#}", err).to_lowercase().contains("not found or already removed"));
@@ -193,7 +193,7 @@ fn set_agent_state_round_trips() {
     let db = tmp.path().join("test.sqlite");
     let store = Store::open(&db).unwrap();
 
-    let token = store.register_agent("alice", "claude", None).unwrap();
+    let token = store.register_agent("alice", "claude", None, &[]).unwrap();
 
     // Initial state should be idle (schema default).
     let agent = store.agent_by_name("alice").unwrap().unwrap();
@@ -216,4 +216,24 @@ fn set_agent_state_round_trips() {
     // set_agent_state_by_token errors on unknown token.
     let err = store.set_agent_state_by_token("no-such-token", "busy").unwrap_err();
     assert!(format!("{:#}", err).contains("not found"));
+}
+
+#[test]
+fn extra_args_round_trips() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("test.sqlite");
+    let store = Store::open(&db).unwrap();
+
+    let args = vec!["--foo".to_string(), "--bar baz".to_string()];
+    let token = store.register_agent("alice", "claude", None, &args).unwrap();
+
+    let by_token = store.agent_by_token(&token).unwrap().unwrap();
+    assert_eq!(by_token.extra_args, args);
+
+    let by_name = store.agent_by_name("alice").unwrap().unwrap();
+    assert_eq!(by_name.extra_args, args);
+
+    // Verify list_agents also carries extra_args.
+    let agents = store.list_agents().unwrap();
+    assert_eq!(agents[0].extra_args, args);
 }

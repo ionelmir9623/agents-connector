@@ -28,14 +28,14 @@ async fn alice_asks_bob_who_replies_and_alice_sees_reply() {
     // Connect as alice.
     let mut alice = UnixStream::connect(&sock).await.unwrap();
     write_frame_async(&mut alice, &serde_json::to_vec(&Request::RegisterAgent {
-        name: "alice".into(), cli_kind: "claude".into(), workdir: None,
+        name: "alice".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![],
     }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut alice).await.unwrap();
 
     // Connect as bob.
     let mut bob = UnixStream::connect(&sock).await.unwrap();
     write_frame_async(&mut bob, &serde_json::to_vec(&Request::RegisterAgent {
-        name: "bob".into(), cli_kind: "claude".into(), workdir: None,
+        name: "bob".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![],
     }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut bob).await.unwrap();
 
@@ -86,7 +86,7 @@ async fn broadcast_visible_to_all_other_agents() {
     for n in &["alice", "bob", "carol"] {
         let mut s = UnixStream::connect(&sock).await.unwrap();
         write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
-            name: n.to_string(), cli_kind: "claude".into(), workdir: None,
+            name: n.to_string(), cli_kind: "claude".into(), workdir: None, extra_args: vec![],
         }).unwrap()).await.unwrap();
         let _ = read_frame_async(&mut s).await.unwrap();
     }

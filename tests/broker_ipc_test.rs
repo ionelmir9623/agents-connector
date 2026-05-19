@@ -27,7 +27,7 @@ async fn authenticate_with_valid_token_returns_ok() {
     let (_tmp, sock) = spawn_test_broker().await;
     // Pre-register an agent directly via the store so we have a token.
     let store = Store::open(&_tmp.path().join("test.sqlite")).unwrap();
-    let token = store.register_agent("alice", "claude", None).unwrap();
+    let token = store.register_agent("alice", "claude", None, &[]).unwrap();
 
     let mut stream = UnixStream::connect(&sock).await.unwrap();
     let req = Request::Authenticate { agent_token: token };
@@ -50,7 +50,7 @@ async fn register_agent_returns_token_and_list_includes_it() {
     let (_tmp, sock) = spawn_test_broker().await;
 
     let mut stream = UnixStream::connect(&sock).await.unwrap();
-    let req = Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into(), workdir: None };
+    let req = Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![] };
     write_frame_async(&mut stream, &serde_json::to_vec(&req).unwrap()).await.unwrap();
     let frame = read_frame_async(&mut stream).await.unwrap();
     let resp: Response = serde_json::from_slice(&frame).unwrap();
@@ -78,9 +78,9 @@ async fn tell_and_read_messages_round_trip() {
     let (_tmp, sock) = spawn_test_broker().await;
 
     let mut s = UnixStream::connect(&sock).await.unwrap();
-    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into(), workdir: None }).unwrap()).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![] }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
-    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into(), workdir: None }).unwrap()).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![] }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
 
     write_frame_async(&mut s, &serde_json::to_vec(&Request::Tell {
@@ -114,9 +114,9 @@ async fn ask_reply_check_round_trip() {
     let (_tmp, sock) = spawn_test_broker().await;
 
     let mut s = UnixStream::connect(&sock).await.unwrap();
-    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into(), workdir: None }).unwrap()).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![] }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
-    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into(), workdir: None }).unwrap()).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![] }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
 
     write_frame_async(&mut s, &serde_json::to_vec(&Request::Ask {
@@ -154,9 +154,9 @@ async fn wait_for_reply_blocks_then_returns() {
     let (_tmp, sock) = spawn_test_broker().await;
 
     let mut s = UnixStream::connect(&sock).await.unwrap();
-    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into(), workdir: None }).unwrap()).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "alice".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![] }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
-    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into(), workdir: None }).unwrap()).await.unwrap();
+    write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent { name: "bob".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![] }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
 
     write_frame_async(&mut s, &serde_json::to_vec(&Request::Ask {
@@ -195,7 +195,7 @@ async fn get_agent_returns_full_details() {
 
     let mut s = UnixStream::connect(&sock).await.unwrap();
     write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
-        name: "alice".into(), cli_kind: "claude".into(), workdir: Some("/tmp/x".into()),
+        name: "alice".into(), cli_kind: "claude".into(), workdir: Some("/tmp/x".into()), extra_args: vec![],
     }).unwrap()).await.unwrap();
     let token = match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
         Response::RegisterAck { agent_token } => agent_token,
@@ -204,11 +204,12 @@ async fn get_agent_returns_full_details() {
 
     write_frame_async(&mut s, &serde_json::to_vec(&Request::GetAgent { name: "alice".into() }).unwrap()).await.unwrap();
     match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
-        Response::AgentDetails { name, cli_kind, token: t, workdir } => {
+        Response::AgentDetails { name, cli_kind, token: t, workdir, extra_args } => {
             assert_eq!(name, "alice");
             assert_eq!(cli_kind, "claude");
             assert_eq!(t, token);
             assert_eq!(workdir.as_deref(), Some("/tmp/x"));
+            assert!(extra_args.is_empty());
         }
         other => panic!("unexpected: {:?}", other),
     }
@@ -220,7 +221,7 @@ async fn remove_agent_soft_deletes_via_ipc() {
 
     let mut s = UnixStream::connect(&sock).await.unwrap();
     write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
-        name: "alice".into(), cli_kind: "claude".into(), workdir: None,
+        name: "alice".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![],
     }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
 
@@ -245,7 +246,7 @@ async fn set_agent_state_updates_via_ipc() {
     // Register an agent and capture its token.
     let mut s = UnixStream::connect(&sock).await.unwrap();
     write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
-        name: "alice".into(), cli_kind: "claude".into(), workdir: None,
+        name: "alice".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![],
     }).unwrap()).await.unwrap();
     let token = match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
         Response::RegisterAck { agent_token } => agent_token,

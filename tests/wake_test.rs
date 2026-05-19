@@ -30,11 +30,11 @@ async fn urgent_tell_completes_with_wake_disabled() {
 
     let mut s = UnixStream::connect(&sock).await.unwrap();
     write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
-        name: "alice".into(), cli_kind: "claude".into(), workdir: None,
+        name: "alice".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![],
     }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
     write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
-        name: "bob".into(), cli_kind: "claude".into(), workdir: None,
+        name: "bob".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![],
     }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
 
@@ -74,11 +74,11 @@ async fn urgent_ask_completes_with_wake_disabled() {
 
     let mut s = UnixStream::connect(&sock).await.unwrap();
     write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
-        name: "alice".into(), cli_kind: "claude".into(), workdir: None,
+        name: "alice".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![],
     }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
     write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
-        name: "bob".into(), cli_kind: "claude".into(), workdir: None,
+        name: "bob".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![],
     }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
 
@@ -118,14 +118,14 @@ async fn wake_skips_busy_agent() {
 
     let mut s = UnixStream::connect(&sock).await.unwrap();
     write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
-        name: "alice".into(), cli_kind: "claude".into(), workdir: None,
+        name: "alice".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![],
     }).unwrap()).await.unwrap();
     let token = match serde_json::from_slice::<Response>(&read_frame_async(&mut s).await.unwrap()).unwrap() {
         Response::RegisterAck { agent_token } => agent_token,
         other => panic!("unexpected: {:?}", other),
     };
     write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
-        name: "bob".into(), cli_kind: "claude".into(), workdir: None,
+        name: "bob".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![],
     }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
 
@@ -183,11 +183,11 @@ async fn stale_busy_state_auto_resets_on_wake() {
 
     let mut s = UnixStream::connect(&sock).await.unwrap();
     write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
-        name: "alice".into(), cli_kind: "claude".into(), workdir: None,
+        name: "alice".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![],
     }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
     write_frame_async(&mut s, &serde_json::to_vec(&Request::RegisterAgent {
-        name: "bob".into(), cli_kind: "claude".into(), workdir: None,
+        name: "bob".into(), cli_kind: "claude".into(), workdir: None, extra_args: vec![],
     }).unwrap()).await.unwrap();
     let _ = read_frame_async(&mut s).await.unwrap();
 

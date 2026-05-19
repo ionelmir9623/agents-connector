@@ -20,6 +20,9 @@ pub enum Command {
         session: Option<String>,
         #[arg(long)]
         workdir: Option<std::path::PathBuf>,
+        /// Extra args passed verbatim to the launched CLI (everything after `--`).
+        #[arg(last = true)]
+        extra_args: Vec<String>,
     },
     /// List all sessions.
     List,
