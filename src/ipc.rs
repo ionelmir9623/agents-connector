@@ -23,7 +23,7 @@ pub enum Request {
     ListAgents,
     /// Subscribe to live message stream (for `tail`).
     SubscribeStream,
-    RegisterAgent { name: String, cli_kind: String, workdir: Option<String> },
+    RegisterAgent { name: String, cli_kind: String, workdir: Option<String>, extra_args: Vec<String> },
     /// Remove an agent (soft-delete). Returns the freed token so caller can clean up files.
     RemoveAgent { name: String },
     /// Look up an agent by name. Returns full details (including token + workdir) needed for restart/resume.
@@ -52,6 +52,7 @@ pub enum Response {
         cli_kind: String,
         token: String,
         workdir: Option<String>,
+        extra_args: Vec<String>,
     },
     /// Removal acknowledgment; carries the freed token.
     RemoveAck { freed_token: String },
