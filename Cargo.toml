@@ -3,8 +3,12 @@ name = "agents-connector"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-description = "Multi-agent CLI communication substrate"
-repository = "https://github.com/REPLACE-ME/agents-connector"
+description = "Multi-agent CLI communication substrate — connect Claude Code, Codex, and Gemini CLI agents in a shared tmux session"
+repository = "https://github.com/YOUR_GITHUB_USERNAME/agents-connector"
+homepage = "https://github.com/YOUR_GITHUB_USERNAME/agents-connector"
+readme = "README.md"
+keywords = ["mcp", "agents", "tmux", "claude", "cli"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
