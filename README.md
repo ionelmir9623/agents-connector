@@ -53,7 +53,7 @@ agents-connector add claude --name writer
 agents-connector add codex  --name reviewer
 ```
 
-Now in `writer`'s pane, prompt it normally. Tell it: *"after you finish, ask `reviewer` to review the diff."* Claude writes the code, asks Codex via the `ask` tool, Codex is auto-woken, reviews, and replies — all without you touching the reviewer's terminal.
+Each agent runs in its own tmux window — switch with `Ctrl-b` then `n` (next) / `p` (previous). Then in `writer`'s window, prompt it normally: *"after you finish, ask `reviewer` to review the diff."* Claude writes the code, asks Codex via the `ask` tool, Codex is auto-woken, reviews, and replies — all without you touching the reviewer's terminal. (Full walkthrough with screenshots in [Example](#example-claude-writes-it-codex-reviews-it) below — including the one-time Codex hook-approval step.)
 
 **Windows (PowerShell):**
 
@@ -69,19 +69,37 @@ Prebuilt binaries for macOS (`aarch64`/`x86_64`), Linux (`aarch64`/`x86_64`), an
 
 A ~60-second cross-model review — Claude implements a function, hands it to Codex for a second opinion, and gets the feedback back. Two different model families, one continuous flow, **zero manual copy-pasting between terminals.**
 
+> **New to tmux? Read this first.** Every agent runs in its own tmux *window* inside the session. `Ctrl-b` below means: hold **Ctrl**, tap **b**, release both, then press the next key.
+> - `Ctrl-b` then `n` — **n**ext window · `Ctrl-b` then `p` — **p**revious window
+> - `Ctrl-b` then `0` / `1` / `2`… — jump straight to a window by number
+> - `Ctrl-b` then `w` — visual window picker (arrow keys + Enter)
+> - `Ctrl-b` then `d` — **d**etach and leave everything running (`agents-connector attach fib-demo` to come back)
+
 **1. Spin up the pod**
 
 ```bash
-agents-connector start fib-demo
-agents-connector add claude --name writer
-agents-connector add codex  --name reviewer
+agents-connector start fib-demo              # create the session + open tmux
+agents-connector add claude --name writer    # creates a tmux window called "writer"
+agents-connector add codex  --name reviewer  # creates a tmux window called "reviewer"
 ```
+
+You land in the session with a live transcript pane at the bottom.
 
 <p align="center"><img src="assets/example-1-session.png" alt="tmux session with a writer (Claude) window, a reviewer (Codex) window, and a live transcript pane" width="100%"></p>
 
-**2. Ask the writer to implement — and to request a review itself**
+**2. Approve Codex's hooks — one-time, Codex only**
 
-In the `writer` (Claude) window, prompt:
+Switch to the reviewer window: `Ctrl-b` then `n` until the status bar shows **reviewer**. Codex starts up and reports something like *"2 hooks need review."* Codex will **not** run hooks until you approve them — and without them it can't be auto-woken or see incoming messages. In the Codex prompt, type:
+
+```
+/hooks
+```
+
+Approve all listed hooks. They're remembered after this. (Claude and Gemini have no approval gate — nothing to do for them.)
+
+**3. Ask the writer to implement — and to request a review itself**
+
+Switch to the **writer** window (`Ctrl-b` then `p`). Prompt Claude:
 
 > Write a Python function that returns the nth Fibonacci number. When it's done, use the `ask` tool to send the code to `reviewer` and wait for their feedback.
 
@@ -89,15 +107,15 @@ Claude writes the function and calls `ask(to="reviewer", ...)` on its own:
 
 <p align="center"><img src="assets/example-2-claude-writes.png" alt="Claude writing the Fibonacci function and calling the ask tool to send it to the reviewer" width="100%"></p>
 
-**3. Codex wakes itself up and reviews**
+**4. Codex wakes itself up and reviews**
 
-You don't touch the reviewer window. `agents-connector` nudges the idle Codex awake, injects the request into its context, and Codex reviews the code and answers with `post_reply`:
+Switch to the **reviewer** window (`Ctrl-b` then `n`). You never prompted it — `agents-connector` nudged the idle Codex awake, injected the request into its context, and Codex reviews the code and answers with `post_reply`:
 
 <p align="center"><img src="assets/example-3-codex-reviews.png" alt="Codex automatically woken, reviewing the Fibonacci function and posting a reply" width="100%"></p>
 
-**4. The review lands back with Claude**
+**5. The review lands back with Claude**
 
-Claude's `wait_for_reply` unblocks with Codex's feedback, and it folds the notes into the code:
+Back in the **writer** window (`Ctrl-b` then `p`), Claude's `wait_for_reply` has unblocked with Codex's feedback, and it folds the notes into the code:
 
 <p align="center"><img src="assets/example-4-reply.png" alt="Codex's review delivered back into Claude's context; Claude incorporating the feedback" width="100%"></p>
 
