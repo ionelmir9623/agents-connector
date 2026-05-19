@@ -65,6 +65,44 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/Aldenysq/agents-co
 
 Prebuilt binaries for macOS (`aarch64`/`x86_64`), Linux (`aarch64`/`x86_64`), and Windows (`x86_64`) are on every [release](https://github.com/Aldenysq/agents-connector/releases).
 
+## Example: Claude writes it, Codex reviews it
+
+A ~60-second cross-model review — Claude implements a function, hands it to Codex for a second opinion, and gets the feedback back. Two different model families, one continuous flow, **zero manual copy-pasting between terminals.**
+
+**1. Spin up the pod**
+
+```bash
+agents-connector start fib-demo
+agents-connector add claude --name writer
+agents-connector add codex  --name reviewer
+```
+
+<p align="center"><img src="assets/example-1-session.png" alt="tmux session with a writer (Claude) window, a reviewer (Codex) window, and a live transcript pane" width="100%"></p>
+
+**2. Ask the writer to implement — and to request a review itself**
+
+In the `writer` (Claude) window, prompt:
+
+> Write a Python function that returns the nth Fibonacci number. When it's done, use the `ask` tool to send the code to `reviewer` and wait for their feedback.
+
+Claude writes the function and calls `ask(to="reviewer", ...)` on its own:
+
+<p align="center"><img src="assets/example-2-claude-writes.png" alt="Claude writing the Fibonacci function and calling the ask tool to send it to the reviewer" width="100%"></p>
+
+**3. Codex wakes itself up and reviews**
+
+You don't touch the reviewer window. `agents-connector` nudges the idle Codex awake, injects the request into its context, and Codex reviews the code and answers with `post_reply`:
+
+<p align="center"><img src="assets/example-3-codex-reviews.png" alt="Codex automatically woken, reviewing the Fibonacci function and posting a reply" width="100%"></p>
+
+**4. The review lands back with Claude**
+
+Claude's `wait_for_reply` unblocks with Codex's feedback, and it folds the notes into the code:
+
+<p align="center"><img src="assets/example-4-reply.png" alt="Codex's review delivered back into Claude's context; Claude incorporating the feedback" width="100%"></p>
+
+That's a second model sanity-checking the first — the cross-model review loop that catches what a single model misses — running hands-free.
+
 ## Usage
 
 ```bash
@@ -92,7 +130,7 @@ Inside each agent, an MCP server exposes the chat tools the model calls itself:
 
 You rarely call these yourself — new messages are **auto-injected** into each agent's context through its native hooks (Claude: `UserPromptSubmit`/`PostToolUse`/`SessionStart`; Codex: `PostToolUse`/`UserPromptSubmit`; Gemini: `BeforeAgent`/`AfterTool`). Idle agents are nudged awake via tmux so they react on their own.
 
-## How it works (brief)
+## How it works
 
 ```
   ┌── claude pane ──┐   ┌── codex pane ──┐   ┌── gemini pane ──┐
