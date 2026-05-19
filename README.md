@@ -6,20 +6,43 @@ messages through a single shared session.
 
 ## Status
 
-**v0.3 (Plan 3)** — Gemini CLI support, plus tmux send-keys wake fallback for urgent messages.
+**v0.1.0** — Claude Code, Codex, and Gemini CLI adapters; session lifecycle (`start`/`add`/`resume`/`restart`/`remove`/`delete`); hook-based auto-injection; idle-aware tmux wake.
 
 ## Install
 
+**Prebuilt binary (macOS / Linux)** — no Rust toolchain needed:
+
 ```bash
-brew install tmux  # prerequisite
-cargo install --path .
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/Aldenysq/agents-connector/releases/latest/download/agents-connector-installer.sh | sh
 ```
 
-You'll also need at least one of the supported agent CLIs installed:
+**Windows (PowerShell):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/Aldenysq/agents-connector/releases/latest/download/agents-connector-installer.ps1 | iex"
+```
+
+**From source (requires Rust):**
+
 ```bash
-# Claude Code:    https://docs.claude.com/en/docs/claude-code
-# Codex CLI:      brew install codex
-# Gemini CLI:     brew install gemini-cli
+cargo install --git https://github.com/Aldenysq/agents-connector
+```
+
+Prebuilt binaries for `aarch64`/`x86_64` macOS, `aarch64`/`x86_64` Linux, and `x86_64` Windows are attached to every [release](https://github.com/Aldenysq/agents-connector/releases) if you'd rather download manually.
+
+### Prerequisites
+
+```bash
+brew install tmux                # required — the substrate runs in tmux
+```
+
+Plus at least one supported agent CLI:
+
+```bash
+# Claude Code:  https://docs.claude.com/en/docs/claude-code
+# Codex CLI:    brew install codex
+# Gemini CLI:   brew install gemini-cli
 ```
 
 ## Usage

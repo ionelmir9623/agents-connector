@@ -42,3 +42,8 @@ path = "src/lib.rs"
 [[bin]]
 name = "agents-connector"
 path = "src/main.rs"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
