@@ -82,8 +82,8 @@ pub async fn run(session: &str, no_agents: bool) -> Result<()> {
             let mut s = UnixStream::connect(&socket).await?;
             write_frame_async(&mut s, &serde_json::to_vec(&Request::GetAgent { name: a.name.clone() })?).await?;
             let frame = read_frame_async(&mut s).await?;
-            let (token, workdir) = match serde_json::from_slice::<Response>(&frame)? {
-                Response::AgentDetails { token, workdir, .. } => (token, workdir),
+            let (token, workdir, extra_args) = match serde_json::from_slice::<Response>(&frame)? {
+                Response::AgentDetails { token, workdir, extra_args, .. } => (token, workdir, extra_args),
                 Response::Error { message } => {
                     eprintln!("warning: get_agent({}) failed: {}", a.name, message);
                     continue;
@@ -105,6 +105,7 @@ pub async fn run(session: &str, no_agents: bool) -> Result<()> {
                 kind,
                 token,
                 workdir: workdir.map(PathBuf::from),
+                extra_args,
             };
             if let Err(e) = launch::launch_in_tmux(&spec, &socket) {
                 eprintln!("warning: relaunch `{}` failed: {:#}", a.name, e);

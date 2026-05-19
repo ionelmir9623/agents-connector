@@ -11,6 +11,7 @@ pub async fn run(
     name: String,
     session: Option<String>,
     workdir: Option<PathBuf>,
+    extra_args: Vec<String>,
 ) -> Result<()> {
     let kind = CliKind::parse(&cli_kind)?;
     let session = session.or_else(tmux::current_session)
@@ -20,7 +21,7 @@ pub async fn run(
         anyhow::bail!("broker not running for `{}`. Use `agents-connector start {}` first.", session, session);
     }
 
-    // 1. Ask broker to register the agent (with workdir).
+    // 1. Ask broker to register the agent (with workdir and extra_args).
     let workdir_str = workdir.as_ref().map(|p| p.to_string_lossy().to_string());
     let mut s = UnixStream::connect(&socket).await
         .context("connecting to broker")?;
@@ -28,6 +29,7 @@ pub async fn run(
         name: name.clone(),
         cli_kind: kind.as_str().to_string(),
         workdir: workdir_str.clone(),
+        extra_args: extra_args.clone(),
     };
     write_frame_async(&mut s, &serde_json::to_vec(&req)?).await?;
     let frame = read_frame_async(&mut s).await?;
@@ -72,6 +74,7 @@ pub async fn run(
         kind,
         token,
         workdir: workdir.clone(),
+        extra_args,
     };
     launch::launch_in_tmux(&spec, &socket)?;
 

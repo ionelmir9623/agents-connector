@@ -9,7 +9,7 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
             Ok(None) => Response::Error { message: "unknown agent token".into() },
             Err(e) => Response::Error { message: format!("{:#}", e) },
         },
-        Request::RegisterAgent { name, cli_kind, workdir } => match ctx.store.register_agent(&name, &cli_kind, workdir.as_deref()) {
+        Request::RegisterAgent { name, cli_kind, workdir, extra_args } => match ctx.store.register_agent(&name, &cli_kind, workdir.as_deref(), &extra_args) {
             Ok(token) => Response::RegisterAck { agent_token: token },
             Err(e) => Response::Error { message: format!("{:#}", e) },
         },
@@ -155,6 +155,7 @@ pub async fn dispatch(req: Request, ctx: &Arc<BrokerCtx>) -> Response {
                 cli_kind: agent.cli_kind,
                 token: agent.token,
                 workdir: agent.workdir,
+                extra_args: agent.extra_args,
             },
             Ok(None) => Response::Error { message: format!("agent not found: {}", name) },
             Err(e) => Response::Error { message: format!("{:#}", e) },

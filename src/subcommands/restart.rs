@@ -19,8 +19,8 @@ pub async fn run(name: &str, session: Option<String>) -> Result<()> {
         .context("connecting to broker")?;
     write_frame_async(&mut s, &serde_json::to_vec(&Request::GetAgent { name: name.to_string() })?).await?;
     let frame = read_frame_async(&mut s).await?;
-    let (cli_kind_str, token, workdir) = match serde_json::from_slice::<Response>(&frame)? {
-        Response::AgentDetails { cli_kind, token, workdir, .. } => (cli_kind, token, workdir),
+    let (cli_kind_str, token, workdir, extra_args) = match serde_json::from_slice::<Response>(&frame)? {
+        Response::AgentDetails { cli_kind, token, workdir, extra_args, .. } => (cli_kind, token, workdir, extra_args),
         Response::Error { message } => anyhow::bail!("get_agent failed: {}", message),
         other => anyhow::bail!("unexpected: {:?}", other),
     };
@@ -47,6 +47,7 @@ pub async fn run(name: &str, session: Option<String>) -> Result<()> {
         kind,
         token,
         workdir: workdir.map(PathBuf::from),
+        extra_args,
     };
     launch::launch_in_tmux(&spec, &socket)?;
 

@@ -15,6 +15,7 @@ pub struct Spec {
     pub kind: CliKind,
     pub token: String,
     pub workdir: Option<PathBuf>,
+    pub extra_args: Vec<String>,
 }
 
 /// Generate adapter config for the agent and spawn it in a new tmux window.
@@ -26,11 +27,15 @@ pub fn launch_in_tmux(spec: &Spec, broker_socket: &Path) -> Result<()> {
     let full_cmd = match spec.kind {
         CliKind::Claude => {
             let generated = claude::generate(&agent_dir, &exe, broker_socket, &spec.token)?;
-            let claude_cmd = format!(
+            let mut claude_cmd = format!(
                 "claude --mcp-config {} --settings {}",
                 shell_quote(&generated.mcp_config_path.to_string_lossy()),
                 shell_quote(&generated.settings_path.to_string_lossy())
             );
+            for arg in &spec.extra_args {
+                claude_cmd.push(' ');
+                claude_cmd.push_str(&shell_quote(arg));
+            }
             // Claude has no --cd; use shell `cd && ` if workdir is set.
             match spec.workdir.as_ref() {
                 Some(dir) => format!("cd {} && {}", shell_quote(&dir.to_string_lossy()), claude_cmd),
@@ -48,6 +53,9 @@ pub fn launch_in_tmux(spec: &Spec, broker_socket: &Path) -> Result<()> {
                 parts.push("--cd".into());
                 parts.push(shell_quote(&dir.to_string_lossy()));
             }
+            for arg in &spec.extra_args {
+                parts.push(shell_quote(arg));
+            }
             parts.join(" ")
         }
         CliKind::Gemini => {
@@ -62,6 +70,9 @@ pub fn launch_in_tmux(spec: &Spec, broker_socket: &Path) -> Result<()> {
             if let Some(dir) = spec.workdir.as_ref() {
                 parts.push("--include-directories".into());
                 parts.push(shell_quote(&dir.to_string_lossy()));
+            }
+            for arg in &spec.extra_args {
+                parts.push(shell_quote(arg));
             }
             parts.join(" ")
         }
