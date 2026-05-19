@@ -146,11 +146,11 @@ mod tests {
 
     #[test]
     fn handles_paths_with_special_chars() {
-        let bin = PathBuf::from("/Users/frog with space/bin/agents-connector");
+        let bin = PathBuf::from("/opt/with space/bin/agents-connector");
         let sock = PathBuf::from("/tmp/sock");
         let overrides = config_overrides(&bin, &sock, "TOK-1");
 
         // mcp_servers.agents_connector.command override carries the binary path.
-        assert!(overrides[1].contains("/Users/frog with space/bin/agents-connector"));
+        assert!(overrides[1].contains("/opt/with space/bin/agents-connector"));
     }
 }
