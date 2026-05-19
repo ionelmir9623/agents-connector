@@ -1,21 +1,69 @@
-# agents-connector
+<!--
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │ HERO IMAGE — how to add it:                                              │
+  │ 1. Generate the image (see the prompt in the project notes).            │
+  │ 2. Create an `assets/` folder at the repo root and drop the file in,     │
+  │    e.g.  assets/hero.png                                                 │
+  │ 3. Commit it:  git add assets/hero.png && git commit -m "docs: hero img" │
+  │ 4. Delete this comment block and uncomment the line below.               │
+  │ 5. (Optional) GitHub → repo Settings → "Social preview" → upload the     │
+  │    1280×640 version so it shows when the repo is shared on X/Slack/etc.  │
+  └─────────────────────────────────────────────────────────────────────────┘
+-->
+<!-- ![agents-connector](assets/hero.png) -->
 
-A multi-agent CLI communication substrate. Lets multiple AI CLI agents
-(Claude Code, Codex, Gemini CLI) running in separate tmux panes exchange
-messages through a single shared session.
+<h1 align="center">agents-connector</h1>
 
-## Status
+<p align="center">
+  <strong>Let your AI CLI agents talk to each other.</strong><br>
+  A local message bus that connects Claude Code, Codex, and Gemini CLI so they can
+  chat, delegate, and review each other's work — across vendors, in one tmux session.
+</p>
 
-**v0.1.0** — Claude Code, Codex, and Gemini CLI adapters; session lifecycle (`start`/`add`/`resume`/`restart`/`remove`/`delete`); hook-based auto-injection; idle-aware tmux wake.
+<p align="center">
+  <a href="https://github.com/Aldenysq/agents-connector/releases"><img src="https://img.shields.io/github/v/release/Aldenysq/agents-connector?color=brightgreen" alt="release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license"></a>
+  <a href="https://github.com/Aldenysq/agents-connector/actions"><img src="https://img.shields.io/github/actions/workflow/status/Aldenysq/agents-connector/ci.yml?label=ci" alt="ci"></a>
+  <img src="https://img.shields.io/badge/rust-stable-orange" alt="rust">
+</p>
 
-## Install
+---
 
-**Prebuilt binary (macOS / Linux)** — no Rust toolchain needed:
+## Why?
+
+Coding agents are powerful but **siloed** — each one runs alone in its own terminal, blind to the others. `agents-connector` removes the wall between them.
+
+- **"I want a second model to sanity-check the first."** Have Claude write the code, then auto-ask Codex *and* Gemini to review it. Different model families have different blind spots — cross-model review catches what a single model misses and **measurably cuts hallucinations**.
+- **"I hit a rate limit / ran out of tokens on one model."** Hand the thread to another agent on a different provider and keep going.
+- **"I want agents to actually collaborate."** Not a central planner farming out isolated subtasks — real peer-to-peer messaging. Agents `ask` each other questions and `wait` for answers, like teammates.
+- **"I want them to react on their own."** When a message arrives, the recipient is automatically woken and pulled into the conversation — no babysitting, no copy-pasting between terminals.
+
+If you've ever had three terminal windows open and found yourself manually shuttling context between Claude, Codex, and Gemini — this is the tool.
+
+## What it is
+
+A single Rust binary. You start a session, add agents (any mix of `claude` / `codex` / `gemini`), and they share a chat backed by a local broker. Messages are delivered into each agent's context automatically via that CLI's native hook system. Everything is **local-only** (Unix socket, no network, no accounts, no telemetry) and **durable** (per-session SQLite — stop and resume days later with history intact).
+
+It is **not** another parallel-agent orchestrator. There's no central planner. Agents are peers that talk to each other.
+
+## Quick start
 
 ```bash
+# 1. Install (macOS / Linux, no Rust toolchain needed)
 curl --proto '=https' --tlsv1.2 -LsSf \
   https://github.com/Aldenysq/agents-connector/releases/latest/download/agents-connector-installer.sh | sh
+
+# 2. Prerequisites
+brew install tmux                       # required
+#   plus at least one agent CLI: Claude Code, codex, or gemini-cli
+
+# 3. Start a session and add two agents
+agents-connector start review-pod
+agents-connector add claude --name writer
+agents-connector add codex  --name reviewer
 ```
+
+Now in `writer`'s pane, prompt it normally. Tell it: *"after you finish, ask `reviewer` to review the diff."* Claude writes the code, asks Codex via the `ask` tool, Codex is auto-woken, reviews, and replies — all without you touching the reviewer's terminal.
 
 **Windows (PowerShell):**
 
@@ -23,98 +71,66 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 powershell -ExecutionPolicy Bypass -c "irm https://github.com/Aldenysq/agents-connector/releases/latest/download/agents-connector-installer.ps1 | iex"
 ```
 
-**From source (requires Rust):**
+**From source (requires Rust):** `cargo install --git https://github.com/Aldenysq/agents-connector`
 
-```bash
-cargo install --git https://github.com/Aldenysq/agents-connector
-```
-
-Prebuilt binaries for `aarch64`/`x86_64` macOS, `aarch64`/`x86_64` Linux, and `x86_64` Windows are attached to every [release](https://github.com/Aldenysq/agents-connector/releases) if you'd rather download manually.
-
-### Prerequisites
-
-```bash
-brew install tmux                # required — the substrate runs in tmux
-```
-
-Plus at least one supported agent CLI:
-
-```bash
-# Claude Code:  https://docs.claude.com/en/docs/claude-code
-# Codex CLI:    brew install codex
-# Gemini CLI:   brew install gemini-cli
-```
+Prebuilt binaries for macOS (`aarch64`/`x86_64`), Linux (`aarch64`/`x86_64`), and Windows (`x86_64`) are on every [release](https://github.com/Aldenysq/agents-connector/releases).
 
 ## Usage
 
 ```bash
-# Start a session.
-agents-connector start review-pod
-
-# Add agents (any combo of claude / codex / gemini):
-agents-connector add claude --name writer
-agents-connector add codex --name reviewer-1
-agents-connector add gemini --name reviewer-2
-
-# Optional: tail the chat from another terminal.
-agents-connector tail review-pod
-
-# Refresh an agent's model context (same identity, chat history preserved):
-agents-connector restart --name reviewer-1
-
-# Remove an agent (kills the pane, frees the name):
-agents-connector remove --name reviewer-2
-
-# Stop the session (broker exits; tmux preserved unless --kill-tmux).
-agents-connector stop review-pod
-
-# Bring it back later, with all agents auto-relaunched:
-agents-connector resume review-pod
-# Or skip the auto-relaunch:
-agents-connector resume review-pod --no-agents
+agents-connector start <session>                 # create a session (opens tmux + a live chat pane)
+agents-connector add <claude|codex|gemini> --name <name>   # add an agent
+agents-connector tail <session>                  # watch the conversation from elsewhere
+agents-connector restart --name <name>           # fresh model context, same identity + history
+agents-connector remove  --name <name>           # remove an agent
+agents-connector stop <session>                  # stop the broker (history kept)
+agents-connector resume <session>                # bring it all back, agents relaunched
+agents-connector delete <session> | --all        # delete a session (or all of them)
 ```
 
-In each agent window, the `agents_connector` MCP server exposes tools:
-- `tell(to, text, urgent)` — fire-and-forget message; `urgent=true` triggers a tmux send-keys wake against the recipient's pane (best-effort)
-- `ask(to, text)` — ask a question, get an `ask_id`
-- `wait_for_reply(ask_id, timeout_ms)` — block until reply
-- `check_replies(ask_id)` — non-blocking poll
-- `read_messages(since)` — fetch messages since a high-water-mark
-- `post_reply(ask_id, text)` — reply to an ask
-- `list_agents()` — see who's in the session
+Inside each agent, an MCP server exposes the chat tools the model calls itself:
 
-### Hook-based auto-injection
+| Tool | What it does |
+|---|---|
+| `tell(to, text, urgent)` | send a message (fire-and-forget; `urgent` also wakes an idle recipient) |
+| `ask(to, text)` | ask a question, get an `ask_id` — auto-wakes the recipient |
+| `wait_for_reply(ask_id, timeout_ms)` | block until the answer comes back |
+| `check_replies(ask_id)` | non-blocking poll |
+| `read_messages(since)` | pull your inbox |
+| `post_reply(ask_id, text)` | answer a question |
+| `list_agents()` | see who's in the session |
 
-When you `add` an agent, the launcher wires hooks so new messages are auto-injected into the agent's context — you don't need to prompt the agent to call `read_messages` manually.
+You rarely call these yourself — new messages are **auto-injected** into each agent's context through its native hooks (Claude: `UserPromptSubmit`/`PostToolUse`/`SessionStart`; Codex: `PostToolUse`/`UserPromptSubmit`; Gemini: `BeforeAgent`/`AfterTool`). Idle agents are nudged awake via tmux so they react on their own.
 
-- **Claude**: `Stop` hook (fires at end of every turn).
-- **Codex**: `PostToolUse` and `UserPromptSubmit` hooks. Codex's `Stop` is fire-and-forget and cannot inject context, so we don't use it. Codex requires you to approve hooks once via `/hooks` in its TUI — they're persisted per-token after that.
-- **Gemini**: `BeforeAgent` and `AfterTool` hooks. No approval gate, no feature flag.
+## How it works (brief)
 
-### Urgent wake fallback
+```
+  ┌── claude pane ──┐   ┌── codex pane ──┐   ┌── gemini pane ──┐
+  │  CLI + MCP shim │   │ CLI + MCP shim │   │ CLI + MCP shim  │
+  └────────┬────────┘   └───────┬────────┘   └────────┬────────┘
+           └──────── Unix socket IPC ──────────┐      │
+                                          ┌────┴──────┴────┐
+                                          │  broker daemon │  one per session
+                                          │  + SQLite store│  (durable history)
+                                          └────────────────┘
+```
 
-`tell(urgent=true)` causes the broker to additionally `tmux send-keys` against the recipient's pane. This works around the limitation that hooks only fire during active turns: if the recipient is idle at its prompt, the wake nudge causes its CLI to take a turn, which then triggers the auto-injection hook.
+- **broker daemon** — per-session: owns the SQLite message store, routes `tell`/`ask`/`reply`, tracks each agent's idle/busy state, and drives the wake mechanism.
+- **MCP shim** — a tiny stdio MCP server each agent's CLI talks to; translates the chat tools into broker calls. The agent never knows it isn't talking to a normal MCP server.
+- **hooks** — each CLI's native lifecycle hooks call back into the broker to deliver new messages as `additionalContext` and to report whether the agent is busy.
+- **tmux** — the launcher owns the session; each agent is a window, plus a live transcript pane.
 
-Best-effort caveats:
-- Works cleanly when the recipient is idle at its prompt.
-- May produce odd output if the recipient is mid-thinking or in a special TUI mode.
-- Disabled in tests via `AGENTS_CONNECTOR_DISABLE_WAKE=1`.
-
-## Architecture
-
-A single Rust binary with subcommands:
-
-- **launcher** (`start`/`add`/`list`/`stop`/`attach`/`tail`/`resume`/`restart`/`remove`/`delete`) — owns the tmux session, spawns the broker and agent panes.
-- **broker daemon** (`broker`) — per-session SQLite store + length-prefixed JSON IPC over a Unix socket; tracks agent state and drives wake.
-- **MCP shim** (`mcp-shim`) — stdio MCP server each agent's CLI talks to; translates the 7 chat tools (`tell`/`ask`/`wait_for_reply`/`check_replies`/`read_messages`/`post_reply`/`list_agents`) into broker IPC.
-- **hook** (`hook`) — invoked by each CLI's lifecycle hooks; writes agent state and injects new messages as `additionalContext`.
-
-See `docs/integration-notes.md` for verified facts about each agent CLI's MCP and hook surfaces (the source of truth for adapter behavior).
+All local, no network. See [`docs/integration-notes.md`](docs/integration-notes.md) for the verified per-CLI MCP/hook details.
 
 ## Roadmap
 
-- Packaging: Homebrew tap, prebuilt GitHub release binaries (`cargo-dist`).
+- Homebrew tap (`brew install Aldenysq/tap/agents-connector`)
+- `crates.io` publish (`cargo install agents-connector`)
+- Per-message size limits & history pruning for very long sessions
+- Pane-state-aware wake (skip nudging an agent mid-render)
 
 ## License
 
-Licensed under the [MIT License](LICENSE).
+[MIT](LICENSE) © Aldenysq
+
+<p align="center"><sub>If this saved you from copy-pasting between three terminals, a ⭐ helps others find it.</sub></p>
