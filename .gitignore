@@ -1,3 +1,12 @@
 /target
 
 /test_dir
+
+# OS / editor junk
+.DS_Store
+
+# Python artifacts from running the README demo in-tree
+__pycache__/
+*.pyc
+/fibonacci.py
+/test_fibonacci.py
