@@ -55,15 +55,11 @@ agents-connector add codex  --name reviewer
 
 Each agent runs in its own tmux window — switch with `Ctrl-b` then `n` (next) / `p` (previous). Then in `writer`'s window, prompt it normally: *"after you finish, ask `reviewer` to review the diff."* Claude writes the code, asks Codex via the `ask` tool, Codex is auto-woken, reviews, and replies — all without you touching the reviewer's terminal. (Full walkthrough with screenshots in [Example](#example-claude-writes-it-codex-reviews-it) below — including the one-time Codex hook-approval step.)
 
-**Windows (PowerShell):**
-
-```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/Aldenysq/agents-connector/releases/latest/download/agents-connector-installer.ps1 | iex"
-```
-
 **From source (requires Rust):** `cargo install --git https://github.com/Aldenysq/agents-connector`
 
-Prebuilt binaries for macOS (`aarch64`/`x86_64`), Linux (`aarch64`/`x86_64`), and Windows (`x86_64`) are on every [release](https://github.com/Aldenysq/agents-connector/releases).
+Prebuilt binaries for macOS (`aarch64`/`x86_64`) and Linux (`aarch64`/`x86_64`) are on every [release](https://github.com/Aldenysq/agents-connector/releases).
+
+> **macOS & Linux only.** agents-connector is built on Unix domain sockets, tmux, and POSIX signals — there is no Windows build. On Windows, use WSL2.
 
 ## Example: Claude writes it, Codex reviews it
 

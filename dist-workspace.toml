@@ -7,7 +7,10 @@ members = ["cargo:."]
 cargo-dist-version = "0.31.0"
 # CI backends to support
 ci = "github"
-# The installers to generate for each app
-installers = ["shell", "powershell"]
-# Target platforms to build apps for (Rust target-triple syntax)
-targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+# The installers to generate for each app.
+# Shell only — agents-connector is Unix-only (Unix domain sockets, tmux,
+# POSIX signals); there is no Windows build, so no PowerShell installer.
+installers = ["shell"]
+# Target platforms to build apps for (Rust target-triple syntax).
+# macOS + Linux only by design (no Windows — see installers note above).
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
